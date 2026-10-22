@@ -1,0 +1,51 @@
+Background music for the HL1 server web panel
+=============================================
+
+All tracks below are released under CC0 1.0 Universal (public domain
+dedication); the license was checked on each track's own OpenGameArt page.
+No attribution is required; credits are listed as a courtesy.
+Files were converted to MP3 (VBR -q:a 4, 44.1 kHz stereo) and their volume
+was matched to about -16 LUFS so the playlist plays at an even level.
+
+File:    bleak-terminal.mp3
+Title:   Bleak Terminal
+Author:  Ruskerdax
+Source:  https://opengameart.org/content/bleak-terminal
+License: CC0 1.0 Universal (Public Domain Dedication) - https://creativecommons.org/publicdomain/zero/1.0/
+Length:  1:52
+
+File:    menacing-otherworld.mp3
+Title:   Menacing Otherworld
+Author:  Ruskerdax
+Source:  https://opengameart.org/content/menacing-otherworld
+License: CC0 1.0 Universal (Public Domain Dedication) - https://creativecommons.org/publicdomain/zero/1.0/
+Length:  4:04
+
+File:    factory-ambiance.mp3
+Title:   Factory ambiance
+Author:  yd
+Source:  https://opengameart.org/content/factory-ambiance
+License: CC0 1.0 Universal (Public Domain Dedication) - https://creativecommons.org/publicdomain/zero/1.0/
+Length:  2:03
+
+File:    searching.mp3
+Title:   Searching
+Author:  yd
+Source:  https://opengameart.org/content/searching
+License: CC0 1.0 Universal (Public Domain Dedication) - https://creativecommons.org/publicdomain/zero/1.0/
+Length:  1:45
+
+File:    final-hour.mp3
+Title:   Final Hour
+Author:  isaiah658
+Source:  https://opengameart.org/content/final-hour
+License: CC0 1.0 Universal (Public Domain Dedication) - https://creativecommons.org/publicdomain/zero/1.0/
+Length:  2:17
+
+File:    hunter-class-lifeform.mp3
+Title:   Hunter-class Lifeform
+Author:  vitalezzz
+Source:  https://opengameart.org/content/hunter-class-lifeform
+License: CC0 1.0 Universal (Public Domain Dedication) - https://creativecommons.org/publicdomain/zero/1.0/
+Length:  2:29
+

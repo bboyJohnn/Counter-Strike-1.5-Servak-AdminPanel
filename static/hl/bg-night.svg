@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <!-- Фон «Ночь»: ночной город, прожектор, сетчатый забор и ящики на складе. Нарисовано для панели. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d1420"/><stop offset=".6" stop-color="#080b12"/><stop offset="1" stop-color="#040507"/>
+    </linearGradient>
+    <radialGradient id="lamp" cx=".2" cy=".08" r=".6">
+      <stop offset="0" stop-color="#ffcf7a" stop-opacity=".22"/><stop offset=".5" stop-color="#ff9a2e" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="fence" width="36" height="36" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <path d="M0 0v36M0 0h36" stroke="#2c3646" stroke-width="2"/>
+    </pattern>
+    <pattern id="win" width="46" height="58" patternUnits="userSpaceOnUse">
+      <rect x="10" y="12" width="18" height="24" fill="#e8a33a" opacity=".16"/>
+    </pattern>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#sky)"/>
+  <!-- дома вдали -->
+  <g fill="#0f1520">
+    <path d="M0 640V420h180v-60h150v280zM330 640V300h210v340zM560 640V460h160v-80h120v260zM860 640V340h240v300zM1120 640V430h170v210zM1300 640V260h230v380zM1550 640V400h200v-50h170v290z"/>
+  </g>
+  <g fill="url(#win)">
+    <rect x="330" y="300" width="210" height="340"/><rect x="860" y="340" width="240" height="300"/><rect x="1300" y="260" width="230" height="380"/>
+  </g>
+  <rect width="1920" height="1080" fill="url(#lamp)"/>
+  <!-- забор -->
+  <rect y="560" width="1920" height="260" fill="url(#fence)" opacity=".75"/>
+  <path d="M0 560h1920M0 820h1920M240 560v260M720 560v260M1200 560v260M1680 560v260" stroke="#1d2532" stroke-width="10"/>
+  <!-- склад: бетон и ящики -->
+  <rect y="820" width="1920" height="260" fill="#07090d"/>
+  <g fill="#141a22" stroke="#06080b" stroke-width="6">
+    <rect x="1380" y="790" width="260" height="260"/><rect x="1640" y="870" width="180" height="180"/><rect x="1450" y="610" width="180" height="180"/>
+  </g>
+  <g stroke="#232c39" stroke-width="5" fill="none">
+    <path d="M1380 790l260 260M1640 790l-260 260M1640 870l180 180M1820 870l-180 180M1450 610l180 180M1630 610l-180 180"/>
+  </g>
+  <path d="M300 0L120 1080h400z" fill="#ffd28a" opacity=".035"/>
+</svg>

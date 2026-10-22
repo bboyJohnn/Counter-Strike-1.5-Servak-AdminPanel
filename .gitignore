@@ -1,0 +1,15 @@
+# your settings and the panel's own data (database, map order, live log, copies of edited files)
+.env
+data/
+
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Valve's files: built from your own copy of the game by tools/build_assets.py (see README)
+static/maps/
+static/hl/sfx/
+static/hl/logo.webm
+static/music/hl-*.mp3
+static/music/tracks.local.json

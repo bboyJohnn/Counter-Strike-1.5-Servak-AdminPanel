@@ -1,0 +1,27 @@
+# systemd service for the panel. Edit User/Group and the paths, then:
+#   sudo cp deploy/cs-panel.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now cs-panel
+# Output and errors:  journalctl -u cs-panel -f
+#
+# Run it as the same user that runs the game server: the panel edits server.cfg and mapcycle.txt,
+# reads the server's logs and may restart it (RESTART_CMD) — all of that needs the same owner.
+# (With Docker the user must be allowed to run "docker", i.e. be in the docker group, or be root.)
+
+[Unit]
+Description=Counter-Strike 1.5 Web Panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hlds
+Group=hlds
+WorkingDirectory=/opt/cs-panel
+ExecStart=/opt/cs-panel/venv/bin/python -u app.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

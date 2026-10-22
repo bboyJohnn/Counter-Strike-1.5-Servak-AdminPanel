@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <!-- Фон «Пустыня»: стена из песчаника с аркой, ящики и пыльный закатный свет. Нарисовано для панели. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b1e10"/><stop offset=".5" stop-color="#160f08"/><stop offset="1" stop-color="#070504"/>
+    </linearGradient>
+    <radialGradient id="sun" cx=".78" cy=".22" r=".55">
+      <stop offset="0" stop-color="#ffb347" stop-opacity=".30"/><stop offset=".45" stop-color="#d9822b" stop-opacity=".10"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3d2c18"/><stop offset="1" stop-color="#1a120a"/>
+    </linearGradient>
+    <pattern id="blocks" width="160" height="64" patternUnits="userSpaceOnUse">
+      <rect width="160" height="64" fill="none"/>
+      <path d="M0 63.5h160M80 0v32M0 31.5h160M0 32v32M160 32v32" stroke="#0e0a06" stroke-opacity=".55" stroke-width="3"/>
+    </pattern>
+    <linearGradient id="shade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#000" stop-opacity=".55"/><stop offset=".45" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".35"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#sky)"/>
+  <rect width="1920" height="1080" fill="url(#sun)"/>
+  <!-- дальняя стена с зубцами -->
+  <path d="M0 520h140v-40h60v40h220v-40h60v40h260v-40h60v40h380v-40h60v40h680V1080H0z" fill="#22180d" opacity=".9"/>
+  <!-- ближняя стена с аркой -->
+  <path d="M0 610h1920v470H0zM1180 1080V860a170 170 0 0 1 340 0v220z" fill="url(#wall)" fill-rule="evenodd"/>
+  <path d="M0 610h1920v470H0z" fill="url(#blocks)"/>
+  <path d="M1180 1080V860a170 170 0 0 1 340 0v220z" fill="#050403"/>
+  <path d="M1168 1080V858a182 182 0 0 1 364 0v222" fill="none" stroke="#4d3820" stroke-width="18"/>
+  <rect width="1920" height="1080" fill="url(#shade)"/>
+  <!-- ящики -->
+  <g fill="#2a1d0f" stroke="#120c06" stroke-width="6">
+    <rect x="160" y="820" width="230" height="230"/><rect x="390" y="900" width="150" height="150"/><rect x="215" y="660" width="160" height="160"/>
+  </g>
+  <g stroke="#3f2c16" stroke-width="5" fill="none">
+    <path d="M160 820l230 230M390 820L160 1050M215 660l160 160M375 660L215 820M390 900l150 150M540 900l-150 150"/>
+  </g>
+  <rect y="1040" width="1920" height="40" fill="#050403" opacity=".8"/>
+</svg>

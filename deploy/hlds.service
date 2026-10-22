@@ -1,0 +1,32 @@
+# Example: run the Counter-Strike 1.5 dedicated server itself under systemd (optional, but recommended).
+# systemd starts it at boot and again after a crash — and after the panel's restart button, if .env has
+#   RESTART_CMD=pkill -x hlds_i686        (WON HLDS 3.1.1.x; the binary may also be hlds_amd or hlds_i486 —
+#                                          see "ps -e | grep hlds")
+#   RESTART_CMD=pkill -x hlds_linux       (Steam HLDS)
+# Edit User, the paths and the command line (map, maxplayers, port), then:
+#   sudo cp deploy/hlds.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now hlds
+# Console output: the file below (or journalctl -u hlds -f if you remove the StandardOutput lines).
+
+[Unit]
+Description=Counter-Strike 1.5 dedicated server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hlds
+Group=hlds
+WorkingDirectory=/home/hlds/hlds_l
+# "+map" is the first map after a restart; the panel's map order continues from there.
+# hlds_run restarts the server after a crash by itself; for a Steam server use ./hlds_linux instead.
+ExecStart=/home/hlds/hlds_l/hlds_run -game cstrike +ip 0.0.0.0 -port 27015 +maxplayers 16 +map de_dust2
+Restart=always
+RestartSec=3
+# The console output goes into a file that the panel can show (.env: CONSOLE_LOG=/home/hlds/hlds_l/console.log).
+# Remove these two lines to keep it in journalctl instead. The file only grows — rotate it with logrotate.
+StandardOutput=append:/home/hlds/hlds_l/console.log
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target

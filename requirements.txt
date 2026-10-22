@@ -1,0 +1,3 @@
+aiohttp>=3.8
+# optional: countries of players by IP (GEOIP_DB in .env)
+maxminddb>=2.0

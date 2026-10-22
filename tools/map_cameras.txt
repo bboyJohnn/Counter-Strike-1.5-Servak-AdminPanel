@@ -1,0 +1,2 @@
+# Hand-picked views for map pictures (tools/build_assets.py): map  x y z  yaw pitch
+# Maps that are not listed get an automatic view from a spawn point.

@@ -1,0 +1,6 @@
+# text files with LF everywhere: the panel runs on Linux
+* text=auto eol=lf
+*.jpg binary
+*.png binary
+*.mp3 binary
+*.woff2 binary
