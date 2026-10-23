@@ -34,9 +34,9 @@
 | | |
 |---|---|
 | 🏠 **Overview** | Status of the server, the current map with its picture and time left, the **round score CT : T**, the next map, who is on the map with team, frags and time, machine load, memory and disk, totals for all time; next map, restart the map, **restart the round**, restart the server. |
-| 👥 **Players** | Who is on the server — user id, team (CT / T), address, bot or human — straight from the live log; kick, ban by IP (written to `listip.cfg`), lift bans, message to everyone. |
+| 👥 **Players** | Who is on the server — user id, team (CT / T), address, bot or human — straight from the live log; kick, ban by IP (written to `listip.cfg`), lift bans, message to everyone. **YaPB bots card**: how many bots, players and bots together or exactly that many bots, difficulty, remove all bots. |
 | 🗺️ **Maps** | What is playing, how long and what comes next; **load any map** in a click — a window with its picture and the order after it; **your own map order** as tiles with pictures: drag to reorder, switch maps off — the server follows it from the next map change, no restart. |
-| ⚙️ **Server settings** | Every setting of `server.cfg` — round time, freeze time, buy time, C4 timer, start money, friendly fire, team balance… — with the value in the file and the live value on the server. A backup copy before every save, applied at once through rcon; if the server only takes it after a map change or a restart, the panel asks — now or later — and keeps a reminder. |
+| ⚙️ **Server settings** | Every setting of `server.cfg` — round time, freeze time, buy time, C4 timer, start money, friendly fire, team balance… — with the value in the file and the live value on the server, plus the bot settings of `yapb.cfg`. A backup copy before every save, applied at once through rcon; if the server only takes it after a map change or a restart, the panel asks — now or later — and keeps a reminder. |
 | 💣 **Rounds** | Rounds won by counter-terrorists and terrorists, bombs planted, exploded and defused, hostages rescued, team kills — for the whole server, per map and per player. |
 | 📊 **Statistics** | Matches, kills, weapons, maps; **human players by IP address** (nicknames repeat): every visit with exact time, country and flag; a **player card** (visits, play time, K/D, favourite weapons and maps, best visits, where they play best, days of the week, hours); records, top killers, newcomers, how long visits last; a calendar and a weekdays × hours heat map. |
 | 📜 **Logs · Console · Audit log** | The live game log, the server's own `L*.log` and the console with filter and auto-refresh (the rcon password the engine writes into its log is cut out); any rcon command with a command reference; every action done in the panel. |
@@ -59,7 +59,7 @@
   </tr>
   <tr>
     <td><img src="docs/screenshots/load-map.jpg" alt="Load a map"><br><b>Load a map</b> — its picture and what the server plays after it</td>
-    <td><img src="docs/screenshots/players.jpg" alt="Players"><br><b>Players</b> — teams, kick, ban by IP (night background)</td>
+    <td><img src="docs/screenshots/players.jpg" alt="Players"><br><b>Players</b> — teams, kick, ban by IP, YaPB bots (night background)</td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/rounds.jpg" alt="Rounds"><br><b>Rounds</b> — CT and T wins, the bomb, hostages, team kills</td>
@@ -267,7 +267,7 @@ It prints what the panel found and what it can reach, for example:
 [ -  ] live log                 the panel listens on 127.0.0.1:27500 and writes /opt/cs-panel/data/live.log ...
 [ -  ] Docker                   no
 [ -  ] server restart           not configured
-[ -  ] jk_botti bots            no
+[ -  ] bots                     no
 [ -  ] countries (GeoLite2)     no database: countries are not shown
 All good.
 ```
@@ -367,9 +367,28 @@ your server; addresses are not sent anywhere.
 
 ### Step 13 (optional). Bots
 
-Bots that write `BOT` instead of an ID into the log (PODBot and others) are recognised by themselves: they are
-marked on the Players page and counted separately in the statistics. `BOTS_CFG` (the bots card) is for
-[jk_botti](https://github.com/Bots-United/jk_botti), a Half-Life Deathmatch bot — leave it empty for Counter-Strike.
+The panel has a card for [YaPB](https://github.com/yapb/yapb) bots. Install YaPB as a Metamod plugin
+(`addons/yapb`, a line `linux addons/yapb/bin/yapb.so` in `plugins.ini`) and point the panel at its settings file:
+
+```ini
+BOTS_CFG=/home/hlds/hlds_l/cstrike/addons/yapb/conf/yapb.cfg
+```
+
+- **Players** page: how many bots (`yb_quota`), the mode — *players and bots together* (`fill`: an empty server has
+  that many bots, a player joins and one bot leaves) or *exactly that many bots* (`normal`) — the difficulty from
+  0 (newbie) to 4 (expert), and **Remove all bots** (until the server restarts; `yapb.cfg` is not changed).
+- **Server settings** page: the other bot settings — which team bots join, buying, chat, radio, a name prefix.
+- Every change is written to `yapb.cfg` (a backup copy first, in `data/cfg-backups`) and applied at once through
+  rcon. The panel user must be able to write `yapb.cfg`.
+
+> ⚠️ On Counter-Strike 1.5 use YaPB **4.8 or newer** (the *continuous* build). The stable 4.4.957 crashes the
+> server as soon as a bot picks a team: the CS 1.5 game library of 2002 aligns the stack differently.
+> The bundled waypoint graphs are made for the CS 1.6 versions of the maps; if bots stand still on a map, move its
+> `addons/yapb/data/graph/<map>.graph` away and set `yb_graph_url ""` — YaPB then builds its own graph.
+
+Bots that write `BOT` instead of an ID into the log (YaPB, PODBot and others) are recognised by themselves: they are
+marked on the Players page and counted separately in the statistics. `BOTS_CFG` also takes `jk_botti.cfg` of
+[jk_botti](https://github.com/Bots-United/jk_botti), a Half-Life Deathmatch bot.
 
 ---
 
@@ -403,7 +422,7 @@ paths start at the folder of `.env`. Check with `python3 app.py --check`.
 | `CONTAINER` | | Docker container of the server (restart / stop / start, container card, docker logs). |
 | `RESTART_CMD` | | Without Docker: command that restarts the server, e.g. `pkill -x hlds_i686`. |
 | `CONSOLE_LOG` | | File with the server's console output (Logs page, crash list). |
-| `BOTS_CFG` | | `jk_botti.cfg` — bots card and bot settings (jk_botti is a Half-Life Deathmatch bot; empty for CS). |
+| `BOTS_CFG` | | `yapb.cfg` of YaPB — bots card and bot settings (or `jk_botti.cfg` for Half-Life Deathmatch). |
 | `GEOIP_DB` | `${PANEL_DATA}/GeoLite2-Country.mmdb` | GeoLite2 country database, comma-separated list allowed. |
 
 Settings of the **look** (language, style, background, music) are not on the server: each browser keeps its own,
@@ -524,7 +543,7 @@ hl.py             talking to HLDS: WON and Steam queries, rcon, command referenc
 live.py           live log -> who is online, visits of human players
 stats.py          live log -> matches, rounds, kills, weapons, maps (SQLite)
 humans.py         per-IP player summaries, player card, records
-cfg.py            server.cfg / jk_botti.cfg editing with backups, map order
+cfg.py            server.cfg / yapb.cfg / jk_botti.cfg editing with backups, map order
 mapcycle.py       map order file and the engine's mapcycle.txt
 sysinfo.py        machine, Docker or process uptime, restart, logs
 geo.py            country by IP (GeoLite2)

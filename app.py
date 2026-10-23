@@ -155,7 +155,7 @@ class Panel:
         self.hl = hl_mod.HLServer(cfg.hl_host, cfg.hl_port, cfg.rcon_password, cfg.rcon_cfg)
         files = cfg_mod.Files(os.path.join(cfg.data, "cfg-backups"))
         self.cfg = cfg_mod.ServerConfig(cfg.server_cfg, files)
-        self.bots_cfg = cfg_mod.BotConfig(cfg.bots_cfg, files)
+        self.bots_cfg = cfg_mod.bot_config(cfg.bots_cfg, files)
         self.pool = cfg_mod.MapPool(cfg.mappool, cfg.mapcycle, cfg.maps_dirs, files)
         self.files = files
         self.listip = cfg.listip
@@ -416,7 +416,8 @@ class Panel:
         server_players = await self.hl.players()
         return ok({"players": self.online(server_players), "responding": server_players is not None,
                    "bans": await self.blocking(self.bans),
-                   "bots": await self.blocking(self.bots_cfg.settings) if self.features()["bots"] else None})
+                   "bots": await self.blocking(self.bots_cfg.settings) if self.features()["bots"] else None,
+                   "bots_kind": self.bots_cfg.kind})
 
     async def player_action(self, request):
         body = await request.json()
@@ -441,6 +442,25 @@ class Panel:
             out += "\n" + await self.rcon("снятие бана", "writeip", "сохранить баны")
         elif action == "say":
             out = await self.rcon("сообщение всем", "say %s" % text_arg(body.get("text")))
+        elif action == "bots" and self.bots_cfg.kind == "yapb":
+            need(self.features()["bots"], "боты не настроены (BOTS_CFG в .env)")
+            values = {"yb_quota": str(int_arg(body.get("quota"), 0, 31, "ботов")),
+                      "yb_quota_mode": str(body.get("mode", "")),
+                      "yb_difficulty": str(int_arg(body.get("difficulty"), 0, 4, "сложность"))}
+            for key, value in values.items():
+                try:
+                    self.bots_cfg.check(key, value)
+                except (KeyError, ValueError) as e:
+                    raise ApiError("%s: %s" % (key, e))
+            out = ""
+            for key, value in values.items():
+                old, new, backup = await self.blocking(self.bots_cfg.set_value, key, value)
+                out += await self.rcon("боты", self.bots_cfg.apply_cmd(key, value), "%s: %s → %s" % (key, old, new)) + "\n"
+        elif action == "kickbots" and self.bots_cfg.kind == "yapb":
+            need(self.features()["bots"], "боты не настроены (BOTS_CFG в .env)")
+            # yb_quota 0 до перезапуска (yapb.cfg не трогаем), потом выкинуть тех, кто есть
+            out = await self.rcon("боты", "yb_quota 0", "убрать всех ботов до перезапуска")
+            out += "\n" + await self.rcon("боты", "yb removebots", "убрать всех ботов")
         elif action == "bots":
             need(self.features()["bots"], "боты не настроены (BOTS_CFG в .env)")
             lo = int_arg(body.get("min_bots"), 0, 15, "минимум ботов")
@@ -572,7 +592,7 @@ class Panel:
                            output="копия: " + os.path.basename(backup))
             applied = True
             try:
-                await self.hl.rcon("jk_botti %s %s" % (name, value))
+                await self.hl.rcon(self.bots_cfg.apply_cmd(name, value))
             except RuntimeError:
                 applied = False
             return ok({"backup": os.path.basename(backup), "applied_live": applied, "note": ""})
@@ -674,8 +694,8 @@ class Panel:
         return ok({"output": await self.rcon("консоль", command)})
 
     async def commands(self, request):
-        bots = self.features()["bots"]
-        return ok([{"cmd": c, "help": h} for c, h, need_ in hl_mod.COMMANDS if need_ != "bots" or bots])
+        kind = self.bots_cfg.kind if self.features()["bots"] else None
+        return ok([{"cmd": c, "help": h} for c, h, need_ in hl_mod.COMMANDS if not need_ or need_ == kind])
 
     async def container(self, request):
         body = await request.json()

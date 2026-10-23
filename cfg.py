@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Чтение и правка настроек: server.cfg, jk_botti.cfg и карты сервера.
+"""Чтение и правка настроек: server.cfg, настройки ботов (jk_botti.cfg или yapb.cfg) и карты сервера.
 
 Файлы правятся построчно: панель меняет значение в существующей строке и не
 трогает ни комментарии, ни порядок, ни оформление. Перед каждой записью
@@ -51,6 +51,32 @@ BOT_SETTINGS = {
     "random_color": "случайные цвета моделей ботов: 1 — да",
 }
 BOT_LINE_RE = re.compile(r"^(?P<head>\s*)(?P<off>#?)(?P<name>[a-z_]+)(?P<sp>\s+)(?P<value>\S+)(?P<tail>.*)$")
+
+# Настройки ботов YaPB (Counter-Strike) в addons/yapb/conf/yapb.cfg: «yb_имя "значение"». Применяются по rcon
+# той же строкой — это обычные cvar'ы сервера. Значение: (пояснение, допустимые значения): кортеж (от, до) — целое
+# число, множество — одно из слов, None — короткий текст.
+YAPB_SETTINGS = {
+    "yb_quota": ("ботов на сервере; в режиме fill — людей и ботов вместе", (0, 31)),
+    "yb_quota_mode": ("fill — людей и ботов вместе столько, сколько в yb_quota (зашёл человек — бот уходит); "
+                      "normal — ботов ровно столько", {"fill", "normal", "match"}),
+    "yb_difficulty": ("сложность: 0 — новичок, 1 — лёгкий, 2 — средний, 3 — сложный, 4 — эксперт", (0, 4)),
+    "yb_autovacate": ("1 — бот уходит, чтобы освободить место человеку", (0, 1)),
+    "yb_join_after_player": ("1 — боты заходят, только когда на сервере есть человек", (0, 1)),
+    "yb_join_team": ("за какую команду играют боты: any — за обе, T или CT", {"any", "T", "CT"}),
+    "yb_botbuy": ("1 — боты покупают оружие и снаряжение", (0, 1)),
+    "yb_chat": ("1 — боты пишут в чат", (0, 1)),
+    "yb_chat_percent": ("как часто боты болтают в чате, %", (0, 100)),
+    "yb_radio_mode": ("радио ботов: 0 — молчат, 1 — радиокоманды, 2 — голосовые фразы (их звуков в CS 1.5 нет)", (0, 2)),
+    "yb_name_prefix": ("приставка к имени ботов, например [BOT]; пусто — без неё", None),
+}
+YAPB_LINE_RE = re.compile(r'^(?P<head>\s*)(?P<name>yb_\w+)(?P<sp>\s+)"(?P<value>[^"]*)"(?P<tail>.*)$')
+
+
+def bot_config(path, files):
+    """Настройки ботов из BOTS_CFG: yapb.cfg (YaPB, Counter-Strike) или jk_botti.cfg (Half-Life)."""
+    if path and os.path.basename(path).lower().startswith("yapb"):
+        return YapbConfig(path, files)
+    return BotConfig(path, files)
 
 
 class Files:
@@ -172,9 +198,17 @@ class ServerConfig:
 
 
 class BotConfig:
+    """jk_botti.cfg — боты Half-Life Deathmatch."""
+    kind = "jk_botti"
+
     def __init__(self, path, files):
         self.path = path
         self.files = files
+
+    @staticmethod
+    def apply_cmd(name, value):
+        """rcon-команда, которая применяет настройку на ходу."""
+        return "jk_botti %s %s" % (name, value)
 
     def read(self):
         with open(self.path, encoding="utf-8", errors="replace") as f:
@@ -215,10 +249,74 @@ class BotConfig:
         return old, value, backup
 
 
+class YapbConfig:
+    """yapb.cfg — боты YaPB для Counter-Strike. Значения в кавычках; правится только YAPB_SETTINGS."""
+    kind = "yapb"
+
+    def __init__(self, path, files):
+        self.path = path
+        self.files = files
+
+    @staticmethod
+    def apply_cmd(name, value):
+        return '%s "%s"' % (name, value)
+
+    def read(self):
+        with open(self.path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+
+    def values(self):
+        found = {}
+        for line in self.read().split("\n"):
+            m = YAPB_LINE_RE.match(line)
+            if m and m.group("name") in YAPB_SETTINGS:
+                found[m.group("name")] = m.group("value")
+        return found
+
+    def settings(self):
+        found = self.values()
+        return [{"name": k, "value": found.get(k, ""), "comment": c, "section": "Боты (yapb.cfg)",
+                 "secret": False, "restart_note": "", "bot": True} for k, (c, _) in YAPB_SETTINGS.items()]
+
+    @staticmethod
+    def check(name, value):
+        if name not in YAPB_SETTINGS:
+            raise KeyError("нет такой настройки ботов: %s" % name)
+        allowed = YAPB_SETTINGS[name][1]
+        if isinstance(allowed, tuple):
+            if not re.fullmatch(r"\d{1,3}", value) or not allowed[0] <= int(value) <= allowed[1]:
+                raise ValueError("нужно целое число от %d до %d" % allowed)
+        elif isinstance(allowed, set):
+            if value not in allowed:
+                raise ValueError("допустимо: %s" % ", ".join(sorted(allowed)))
+        elif not re.fullmatch(r"[^\"\\;]{0,16}", value):
+            raise ValueError("не длиннее 16 знаков, без кавычек и ;")
+
+    def set_value(self, name, value):
+        self.check(name, value)
+        lines = self.read().split("\n")
+        idx = None
+        for i, line in enumerate(lines):
+            m = YAPB_LINE_RE.match(line)
+            if m and m.group("name") == name:
+                idx = i
+        if idx is None:
+            at = len(lines) - 1 if lines and lines[-1] == "" else len(lines)   # до пустой строки в конце файла
+            lines.insert(at, '%s "%s"' % (name, value))
+            old = ""
+        else:
+            m = YAPB_LINE_RE.match(lines[idx])
+            old = m.group("value")
+            lines[idx] = '%s%s%s"%s"%s' % (m.group("head"), name, m.group("sp"), value, m.group("tail"))
+        backup = self.files.backup(self.path)
+        self.files.write(self.path, "\n".join(lines))
+        return old, value, backup
+
+
 class MapPool:
     """Карты сервера: порядок и выключенные (MAPPOOL) и список для движка (MAPCYCLE)."""
 
-    HEADER = ("# Карты сервера Half-Life — порядок сверху вниз. Пишет веб-панель (раздел «Карты»),\n"
+    HEADER = ("# Карты сервера — порядок сверху вниз. Пишет веб-панель (раздел «Карты»),\n"
               "# можно править и руками: тогда список заработает после перезапуска сервера.\n"
               "# После последней карты — снова первая. Карта с минусом в начале выключена: -bounce\n")
 

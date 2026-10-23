@@ -122,5 +122,7 @@ class Config:
             "container": bool(self.container),
             "restart": bool(self.container or self.restart_cmd),
             "bots": bool(self.bots_cfg and os.path.exists(self.bots_cfg)),
+            # какие боты: yapb.cfg — YaPB (Counter-Strike), иначе jk_botti (Half-Life)
+            "bots_kind": "yapb" if os.path.basename(self.bots_cfg or "").lower().startswith("yapb") else "jk_botti",
             "console": bool(self.container or self.console_log),
         }

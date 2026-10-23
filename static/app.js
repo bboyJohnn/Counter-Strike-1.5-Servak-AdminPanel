@@ -100,6 +100,8 @@ const ACTIONS = {};
 // картинки карт, музыка, звуки меню) — из /api/me, то есть из .env и папки static
 const SITE = { title: '', hub: '', address: '', features: {}, music: [] };
 const F = (k) => !!(SITE.features && SITE.features[k]);
+// какие боты на сервере: YaPB (Counter-Strike, yapb.cfg) или jk_botti (Half-Life)
+const YAPB = () => F('bots') && SITE.features.bots_kind === 'yapb';
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -904,9 +906,9 @@ ACTIONS.player = async (d) => {
     <h3 class="mt16">${L('Когда заходит')}</h3><div class="hours small" id="pc-h"></div>
     <div class="hours-labels">${Array.from({ length: 24 }, (_, i) => '<span>' + i + '</span>').join('')}</div>
     <h3 class="mt16">${L('Последние заходы')}</h3><div class="tbl-wrap"><table><thead><tr><th>${L('Зашёл')}</th><th class="num">${L('Пробыл')}</th>
-      <th>${L('Ник')}</th><th>${L('Карты')}</th><th class="num">${L('У / С')}</th></tr></thead><tbody>${c.recent.map((r) => `<tr><td class="nowrap">${fmtDateTime(r.joined_at)}</td>
-      <td class="num">${r.online ? pill(L('сейчас'), 'ok') : fmtDur(r.duration)}</td><td>${esc(r.name)}</td>
-      <td class="mono">${r.maps.map(mapLink).join(', ')}</td><td class="num">${r.kills} / ${r.deaths}</td></tr>`).join('')}</tbody></table></div>
+      <th>${L('Ник')}</th><th>${L('Карты')}</th><th class="num nowrap">${L('У / С')}</th></tr></thead><tbody>${c.recent.map((r) => `<tr><td class="nowrap">${fmtDateTime(r.joined_at)}</td>
+      <td class="num nowrap">${r.online ? pill(L('сейчас'), 'ok') : fmtDur(r.duration)}</td><td>${esc(r.name)}</td>
+      <td class="mono">${r.maps.map(mapLink).join(', ')}</td><td class="num nowrap">${r.kills} / ${r.deaths}</td></tr>`).join('')}</tbody></table></div>
     ${c.same_names_from.length ? '<div class="note mt12">' + L('Этим же ником заходили и с других адресов: {0} — возможно, это другой человек.',
       '<span class="mono">' + c.same_names_from.map(esc).join(', ') + '</span>') + '</div>' : ''}`, 'wide');
   hoursChart(m.querySelector('#pc-h'), hours);
@@ -1034,7 +1036,7 @@ PAGES.players = async (main) => {
           <p class="muted">${L('В {0} нет личных сообщений от сервера — только общий чат.', GAME)}</p></div>
       </div>
       <div class="colstack">
-        ${F('bots') ? `<div class="card"><h2>${L('Боты jk_botti')}</h2><div class="stack" id="pl-bots"></div></div>` : ''}
+        ${F('bots') ? `<div class="card"><h2>${YAPB() ? L('Боты YaPB') : L('Боты jk_botti')}</h2><div class="stack" id="pl-bots"></div></div>` : ''}
         <div class="card"><h2>${L('Баны по IP')}</h2>
           <div class="row mb10"><input id="ban-addr" placeholder="1.2.3.4">
             <button class="btn danger" data-act="ban-address">${L('Забанить адрес')}</button></div>
@@ -1066,7 +1068,20 @@ async function loadPlayers(full) {
     d.bans.map((b) => `<tr><td class="mono">${esc(b.ip)}</td><td>${esc(banTerm(b))}</td>
       <td><button class="btn small" data-act="unban" data-address="${esc(b.ip)}">${L('Снять')}</button></td></tr>`).join('')
   }</tbody></table>` : '<div class="empty">' + L('Банов нет') + '</div>';
-  if (full && d.bots && $('#pl-bots')) {
+  if (full && d.bots && $('#pl-bots') && d.bots_kind === 'yapb') {
+    const v = Object.fromEntries(d.bots.map((b) => [b.name, b.value]));
+    const modes = [['fill', L('людей и ботов вместе')], ['normal', L('ровно столько ботов')]];
+    if (v.yb_quota_mode === 'match') modes.push(['match', 'match']);
+    const opt = (val, text, cur) => `<option value="${esc(val)}"${String(val) === String(cur) ? ' selected' : ''}>${esc(text)}</option>`;
+    $('#pl-bots').innerHTML = `
+      <div class="row"><span class="muted w140">${L('Ботов')}</span><input id="yb-quota" class="narrow" type="number" min="0" max="31" value="${esc(v.yb_quota)}">
+        <select id="yb-mode">${modes.map(([k, t]) => opt(k, t, v.yb_quota_mode || 'fill')).join('')}</select></div>
+      <div class="row"><span class="muted w140">${L('Сложность')}</span><select id="yb-diff">${
+        [L('новичок'), L('лёгкий'), L('средний'), L('сложный'), L('эксперт')].map((t, i) => opt(i, i + ' — ' + t, v.yb_difficulty)).join('')}</select></div>
+      <div class="row"><button class="btn primary" data-act="bots">${L('Применить и сохранить')}</button>
+        <button class="btn danger" data-act="kickbots">${L('Убрать всех ботов')}</button></div>
+      <div class="muted">${L('«Людей и ботов вместе»: на пустом сервере столько ботов, зашёл человек — один бот уходит. Новая сложность — у ботов, которые зайдут после неё. «Убрать всех» действует до перезапуска сервера. Остальные настройки ботов — в «Настройках сервера».')}</div>`;
+  } else if (full && d.bots && $('#pl-bots')) {
     const v = Object.fromEntries(d.bots.map((b) => [b.name, b.value]));
     $('#pl-bots').innerHTML = `
       <div class="row"><span class="muted w140">${L('Минимум ботов')}</span><input id="bot-min" class="narrow" type="number" min="0" max="15" value="${esc(v.min_bots)}"></div>
@@ -1102,7 +1117,9 @@ ACTIONS['ban-address'] = async () => {
 };
 ACTIONS.unban = async (d) => { await act(() => player({ action: 'unban', address: d.address }), L('Снято')); loadPlayers(false); };
 ACTIONS.bots = async () => {
-  const body = { action: 'bots', min_bots: +$('#bot-min').value, max_bots: +$('#bot-max').value, botskill: +$('#bot-skill').value };
+  const body = YAPB()
+    ? { action: 'bots', quota: +$('#yb-quota').value, mode: $('#yb-mode').value, difficulty: +$('#yb-diff').value }
+    : { action: 'bots', min_bots: +$('#bot-min').value, max_bots: +$('#bot-max').value, botskill: +$('#bot-skill').value };
   await act(() => player(body), L('Сохранено. Боты подстроятся за несколько секунд'));
   setTimeout(() => loadPlayers(false), 4000);
 };
@@ -1297,7 +1314,7 @@ PAGES.settings = async (main) => {
   for (const s of d.settings) (groups[s.section || L('Прочее')] ||= []).push(s);
   main.innerHTML = `<h1>${L('Настройки сервера')}</h1>
     ${pendingBanner(d.pending)}
-    <div class="note">${F('bots') ? L('Настройки — из server.cfg, боты — из jk_botti.cfg.') : L('Настройки — из server.cfg.')}
+    <div class="note">${F('bots') ? (YAPB() ? L('Настройки — из server.cfg, боты — из yapb.cfg.') : L('Настройки — из server.cfg, боты — из jk_botti.cfg.')) : L('Настройки — из server.cfg.')}
       ${L('Перед каждой записью панель сохраняет копию файла. Настройки применяются сразу. Если сервер применит настройку только после смены карты или перезапуска — панель спросит, сделать это сейчас или потом.')}</div>
     ${Object.entries(groups).map(([g, items]) => `<div class="card"><h2>${esc(g)}</h2><div class="tbl-wrap"><table>
       <thead><tr><th>${L('Настройка')}</th><th>${L('В файле')}</th><th>${L('На сервере')}</th><th></th></tr></thead><tbody>${
@@ -1414,9 +1431,9 @@ function renderStatsTab() {
   } else if (tab === 'maps') {
     body.innerHTML = `<div class="grid two"><div class="card"><h2>${L('Сколько раз играли')}</h2><div class="bars" id="m-b"></div></div>
       <div class="card"><h2>${L('Подробно')}</h2><div class="tbl-wrap"><table><thead><tr><th>${L('Карта')}</th><th class="num">${L('Матчей')}</th>
-        <th class="num">${L('С людьми')}</th><th class="num">${L('Убийств')}</th><th class="num">CT : T</th><th class="num">${L('Средний матч')}</th></tr></thead><tbody>${
+        <th class="num">${L('С людьми')}</th><th class="num">${L('Убийств')}</th><th class="num nowrap">CT : T</th><th class="num">${L('Средний матч')}</th></tr></thead><tbody>${
         d.maps.map((m) => `<tr><td class="mono">${mapLink(m.map)}</td><td class="num">${m.matches}</td><td class="num">${m.with_humans}</td>
-          <td class="num">${num(m.kills)}</td><td class="num">${m.rounds ? num(m.ct_wins) + ' : ' + num(m.t_wins) : '—'}</td><td class="num">${fmtDur(m.avg_duration)}</td></tr>`).join('')
+          <td class="num">${num(m.kills)}</td><td class="num nowrap">${m.rounds ? num(m.ct_wins) + ' : ' + num(m.t_wins) : '—'}</td><td class="num nowrap">${fmtDur(m.avg_duration)}</td></tr>`).join('')
       }</tbody></table></div></div></div>
       <div class="card mt16"><h2>${L('Последние матчи')}</h2>${d.recent.length ? `<div class="tbl-wrap"><table class="compact"><thead><tr>
         <th>${L('Начало')}</th><th>${L('Карта')}</th><th class="num">${L('Длился')}</th><th class="num">${L('Людей')}</th><th class="num">${L('Ботов')}</th><th class="num">${L('Убийств')}</th></tr></thead><tbody>${
@@ -1477,12 +1494,12 @@ function trackingNote() {
 function sessionsTable(rows, limit) {
   if (!rows.length) return '<div class="empty">' + L('Пока никто из живых игроков не заходил.') + ' ' + esc(trackingNote()) + '</div>';
   return `<div class="tbl-wrap"><table><thead><tr><th>${L('Зашёл')}</th><th class="num">${L('Пробыл')}</th><th>${L('Игрок')}</th>
-    <th>${L('IP · страна')}</th><th>${L('Карты')}</th><th class="num">${L('У / С')}</th></tr></thead><tbody>${
+    <th>${L('IP · страна')}</th><th>${L('Карты')}</th><th class="num nowrap">${L('У / С')}</th></tr></thead><tbody>${
     rows.slice(0, limit).map((s) => `<tr><td class="nowrap">${fmtDateTime(s.joined_at)}</td>
       <td class="num nowrap">${s.online ? pill(L('на сервере'), 'ok') : fmtDur(sessEnd(s) - s.joined_at)}</td>
       <td>${playerBtn(s.ip, s.name)}</td>
       <td class="nowrap">${flagHtml(s.country)} <span class="mono">${esc(s.ip || s.address || '—')}</span></td>
-      <td class="mono">${s.maps.map(mapLink).join(', ')}</td><td class="num">${s.kills} / ${s.deaths}</td></tr>`).join('')
+      <td class="mono">${s.maps.map(mapLink).join(', ')}</td><td class="num nowrap">${s.kills} / ${s.deaths}</td></tr>`).join('')
   }</tbody></table></div><p class="muted">${esc(trackingNote())}</p>`;
 }
 

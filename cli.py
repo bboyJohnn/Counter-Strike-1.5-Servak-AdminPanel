@@ -84,7 +84,7 @@ def check_setup(cfg):
     feats = cfg.features()
     line(None, "Docker", cfg.container or "no")
     line(None, "server restart", "docker restart" if cfg.container else (cfg.restart_cmd or "not configured"))
-    line(feats["bots"] or None, "jk_botti bots", cfg.bots_cfg or "no")
+    line(feats["bots"] or None, "bots (%s)" % feats["bots_kind"] if feats["bots"] else "bots", cfg.bots_cfg or "no")
     geo = next((x for x in cfg.geoip if os.path.exists(x)), "")
     line(bool(geo) or None, "countries (GeoLite2)", geo or "no database: countries are not shown")
     print("All good." if not bad else "Problems: %d." % bad)
