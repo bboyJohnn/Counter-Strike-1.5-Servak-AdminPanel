@@ -87,5 +87,7 @@ def check_setup(cfg):
     line(feats["bots"] or None, "bots (%s)" % feats["bots_kind"] if feats["bots"] else "bots", cfg.bots_cfg or "no")
     geo = next((x for x in cfg.geoip if os.path.exists(x)), "")
     line(bool(geo) or None, "countries (GeoLite2)", geo or "no database: countries are not shown")
+    line(feats["backups"] or None, "stats backups",
+         "%s, last %d days" % (cfg.backup_dir, cfg.backup_days) if feats["backups"] else "off (BACKUP_DAYS)")
     print("All good." if not bad else "Problems: %d." % bad)
     return 1 if bad else 0

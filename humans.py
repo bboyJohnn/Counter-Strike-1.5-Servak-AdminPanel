@@ -193,7 +193,7 @@ def card(ip, sessions, geo, weapons, all_sessions, players=(), maps_log=()):
         "joins": [s["joined_at"] for s in mine],
         "recent": [{"name": s["name"], "joined_at": s["joined_at"], "duration": s["duration"],
                     "kills": s["kills"], "deaths": s["deaths"], "online": s["online"], "maps": s["maps"]}
-                   for s in mine[:8]],
+                   for s in mine[:1000]],
         "weapons": weapons[:6],
         "same_names_from": others,
         # [начало, длительность] всех заходов: дни на сервере и дни недели браузер

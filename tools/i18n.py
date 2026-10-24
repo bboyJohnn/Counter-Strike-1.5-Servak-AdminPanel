@@ -29,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 APP_JS = ROOT / 'static' / 'app.js'
 # модули, чьи тексты доходят до браузера: ошибки, подписи, журнал действий
-PY_FILES = ['app.py', 'cfg.py', 'hl.py', 'humans.py', 'stats.py', 'geo.py', 'sysinfo.py', 'mapcycle.py']
+PY_FILES = ['app.py', 'cfg.py', 'hl.py', 'humans.py', 'stats.py', 'geo.py', 'sysinfo.py', 'mapcycle.py', 'backups.py']
 I18N_DIR = ROOT / 'static' / 'i18n'
 CYR = re.compile('[А-Яа-яЁё]')
 PH = re.compile(r'\{(\d+)\}')

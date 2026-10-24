@@ -215,7 +215,7 @@ function countryName(c) {
 function bars(container, items, label, value, opts = {}) {
   container.innerHTML = '';
   if (!items.length) { container.innerHTML = '<div class="empty">' + L('Пока нет данных') + '</div>'; return; }
-  const max = Math.max(...items.map((i) => i[value])) || 1;
+  const max = opts.max || Math.max(...items.map((i) => i[value])) || 1;
   for (const it of items) {
     const row = document.createElement('div'); row.className = 'bar-row';
     const l = document.createElement('div'); l.textContent = it[label];
@@ -231,6 +231,52 @@ function bars(container, items, label, value, opts = {}) {
     row.append(l, track, v); container.appendChild(row);
   }
 }
+
+/* ---------- длинные списки — по страницам ----------
+   pagerMount(el, строки, на странице, fill): fill(тело, строки страницы, номер первой) рисует страницу,
+   под ней кнопки 1 2 3 … Номер страницы живёт в самом элементе, пока его не перерисуют. */
+
+function pagerMount(el, rows, per, fill) {
+  if (!el) return;
+  el.classList.add('paged');
+  el._pg = { rows, per, fill, page: 0 };
+  pagerDraw(el);
+}
+
+function pagerDraw(el) {
+  const { rows, per, fill } = el._pg;
+  const pages = Math.max(1, Math.ceil(rows.length / per));
+  const p = Math.max(0, Math.min(el._pg.page, pages - 1));
+  el._pg.page = p;
+  el.innerHTML = '<div class="pg-body"></div>' + (pages > 1 ? pagerNav(p, pages, rows.length, per) : '');
+  fill(el.firstChild, rows.slice(p * per, (p + 1) * per), p * per);
+}
+
+function pagerNav(p, pages, total, per) {
+  let html = '', prev = -1;
+  for (let i = 0; i < pages; i++) {
+    if (i && i !== pages - 1 && Math.abs(i - p) > 2) continue;
+    if (i - prev > 1) html += '<span class="pg-gap">…</span>';
+    html += `<button class="pg${i === p ? ' active' : ''}" data-act="pg" data-p="${i}">${i + 1}</button>`;
+    prev = i;
+  }
+  return `<div class="pager"><button class="pg" data-act="pg" data-p="${p - 1}" ${p ? '' : 'disabled'}>←</button>${html}
+    <button class="pg" data-act="pg" data-p="${p + 1}" ${p < pages - 1 ? '' : 'disabled'}>→</button>
+    <span class="muted fs12 pg-count">${L('{0}–{1} из {2}', num(p * per + 1), num(Math.min(total, (p + 1) * per)), num(total))}</span></div>`;
+}
+
+ACTIONS.pg = (d, b) => {
+  const el = b.closest('.paged');
+  if (!el || !el._pg) return;
+  el._pg.page = Number(d.p);
+  pagerDraw(el);
+};
+
+// столбики по страницам: шкала общая для всего списка
+const barsPaged = (el, items, label, value, per, opts = {}) => pagerMount(el, items, per, (body, part) => {
+  body.innerHTML = '<div class="bars"></div>';
+  bars(body.firstChild, part, label, value, { ...opts, max: Math.max(1, ...items.map((i) => i[value])) });
+});
 
 /* ---------- превью карт: картинка при наведении на название ----------
    Картинки — static/maps/<карта>.jpg (640×360) и static/maps/thumb/<карта>.jpg (192×108).
@@ -607,7 +653,7 @@ ACTIONS['panel-settings'] = () => {
 const NAV = () => [
   ['overview', L('Обзор')], ['players', F('bots') ? L('Игроки и боты') : L('Игроки')], ['maps', L('Карты')],
   ['settings', L('Настройки сервера')], ['stats', L('Статистика')], ['logs', L('Логи')], ['console', L('Консоль')],
-  ['audit', L('Журнал действий')], ['panel', L('Настройки панели')],
+  ['audit', L('Журнал действий')], ...(F('backups') ? [['backups', L('Бэкап')]] : []), ['panel', L('Настройки панели')],
 ];
 
 function hubHref() {
@@ -865,8 +911,9 @@ const playerBtn = (ip, name) => (ip
 const killsShort = (n) => L('{0} уб.', num(n));
 const kdTip = (k, d) => L('{0} убийств / {1} смертей', num(k), num(d));
 
-/* Карточка игрока. Плиток 10 — ровно два ряда по 5 (на телефоне по 2). Дальше: оружие | карты,
-   лучшие заходы | где играет лучше | дни недели, когда заходит, последние заходы. */
+/* Карточка игрока — вкладками. «Обзор»: адрес, 10 плиток (ровно два ряда по 5, на телефоне по 2).
+   «Лучшее»: оружие | карты, лучшие заходы | где играет лучше | дни недели. «Календарь»: дни, когда заходил, и часы.
+   «Заходы»: все заходы по страницам. */
 ACTIONS.player = async (d) => {
   let c;
   try { c = await api('/api/player?ip=' + encodeURIComponent(d.ip)); } catch (e) { toast(e.message, true); return; }
@@ -880,37 +927,46 @@ ACTIONS.player = async (d) => {
   const kpi = (label, value, tip, sub) => '<div class="kpi"' + (tip ? ' title="' + esc(tip) + '"' : '') + '><div class="muted">'
     + label + '</div><div class="kv-big">' + value + '</div>' + (sub ? '<div class="muted fs12">' + sub + '</div>' : '') + '</div>';
   const byNick = '<div class="muted fs12 mt8">' + L('по нику — статистика оружия ведётся по нику') + '</div>';
+  const tab = (key, label, on) => `<button${on ? ' class="active"' : ''} data-act="pc-tab" data-tab="${key}">${label}</button>`;
   const m = openModal(`
     <h2>${esc(c.name)} ${c.online ? pill(L('на сервере'), 'ok') : ''}</h2>
     ${c.names.length > 1 ? '<div class="muted">' + L('Ники с этого адреса: {0}', c.names.map(esc).join(', ')) + '</div>' : ''}
-    <dl class="kv mt12"><dt>IP</dt><dd class="mono">${esc(c.ip)}</dd><dt>${L('Страна')}</dt><dd>${countryTag(c.country)}</dd>
-      <dt>${L('Первый заход')}</dt><dd>${fmtDateTime(c.first)}</dd>
-      <dt>${L('Последний')}</dt><dd>${c.online ? L('сейчас на сервере') : fmtDateTime(c.last)}</dd></dl>
-    <div class="kpis five mt12">${kpi(L('Заходов'), num(c.visits))}${kpi(L('Всего в игре'), fmtDur(c.seconds))}${kpi(L('Средний заход'), fmtDur(c.avg))}
-      ${kpi(L('Убийств / смертей'), num(c.kills) + ' / ' + num(c.deaths))}${kpi(L('У/С'), dec(c.kd))}
-      ${kpi(L('Лучший заход'), c.best.kills ? killsShort(c.best.kills) : '—', '', c.best.kills ? fmtDate(c.best.at) : '')}
-      ${kpi(L('Самый долгий заход'), fmtDur(c.longest.duration), '', fmtDate(c.longest.at))}
-      ${kpi(L('Убийств в час'), c.kph == null ? '—' : dec(c.kph), L('по заходам, где были убийства или смерти'))}
-      ${kpi(L('Дней на сервере'), num(days.size))}
-      ${kpi(L('Место по времени'), c.rank ? L('{0} из {1}', c.rank.pos, c.rank.of) : '—', L('среди всех живых игроков — по времени в игре'))}</div>
-    <div class="duo mt16">
-      <div><h3>${L('Любимое оружие')}</h3><div class="bars" id="pc-w"></div>${c.weapons.length ? byNick : ''}</div>
-      <div><h3>${L('Любимые карты')}</h3><div class="bars" id="pc-m"></div></div>
+    <div class="tabs mt12" id="pc-tabs">${tab('main', L('Обзор'), true)}${tab('best', L('Лучшее'))}${tab('cal', L('Календарь'))}${
+      tab('visits', L('Заходы') + ' · ' + num(c.visits))}</div>
+    <div class="pc-pane" data-pane="main">
+      <dl class="kv"><dt>IP</dt><dd class="mono">${esc(c.ip)}</dd><dt>${L('Страна')}</dt><dd>${countryTag(c.country)}</dd>
+        <dt>${L('Первый заход')}</dt><dd>${fmtDateTime(c.first)}</dd>
+        <dt>${L('Последний')}</dt><dd>${c.online ? L('сейчас на сервере') : fmtDateTime(c.last)}</dd></dl>
+      <div class="kpis five mt12">${kpi(L('Заходов'), num(c.visits))}${kpi(L('Всего в игре'), fmtDur(c.seconds))}${kpi(L('Средний заход'), fmtDur(c.avg))}
+        ${kpi(L('Убийств / смертей'), num(c.kills) + ' / ' + num(c.deaths))}${kpi(L('У/С'), dec(c.kd))}
+        ${kpi(L('Лучший заход'), c.best.kills ? killsShort(c.best.kills) : '—', '', c.best.kills ? fmtDate(c.best.at) : '')}
+        ${kpi(L('Самый долгий заход'), fmtDur(c.longest.duration), '', fmtDate(c.longest.at))}
+        ${kpi(L('Убийств в час'), c.kph == null ? '—' : dec(c.kph), L('по заходам, где были убийства или смерти'))}
+        ${kpi(L('Дней на сервере'), num(days.size))}
+        ${kpi(L('Место по времени'), c.rank ? L('{0} из {1}', c.rank.pos, c.rank.of) : '—', L('среди всех живых игроков — по времени в игре'))}</div>
     </div>
-    <div class="trio mt16">
-      <div><h3>${L('Лучшие заходы')}</h3><div class="bars lbl-m" id="pc-t"></div></div>
-      <div><h3>${L('Где играет лучше')}</h3><div class="bars lbl-m" id="pc-k"></div></div>
-      <div><h3>${L('Дни недели')}</h3><div class="bars lbl-s" id="pc-d"></div></div>
+    <div class="pc-pane hidden" data-pane="best">
+      <div class="duo">
+        <div><h3>${L('Любимое оружие')}</h3><div class="bars" id="pc-w"></div>${c.weapons.length ? byNick : ''}</div>
+        <div><h3>${L('Любимые карты')}</h3><div class="bars" id="pc-m"></div></div>
+      </div>
+      <div class="trio mt16">
+        <div><h3>${L('Лучшие заходы')}</h3><div class="bars lbl-m" id="pc-t"></div></div>
+        <div><h3>${L('Где играет лучше')}</h3><div class="bars lbl-m" id="pc-k"></div></div>
+        <div><h3>${L('Дни недели')}</h3><div class="bars lbl-s" id="pc-d"></div></div>
+      </div>
+      <div class="muted fs12 mt8">${L('Лучшие заходы — пять заходов с наибольшим числом убийств (убийства / смерти). «Где играет лучше» — У/С на картах, где набралось от 10 убийств и смертей; по нику, из игрового лога. Дни недели — время в игре по дню захода, по часам вашего компьютера.')}</div>
     </div>
-    <div class="muted fs12 mt8">${L('Лучшие заходы — пять заходов с наибольшим числом убийств (убийства / смерти). «Где играет лучше» — У/С на картах, где набралось от 10 убийств и смертей; по нику, из игрового лога. Дни недели — время в игре по дню захода, по часам вашего компьютера.')}</div>
-    <h3 class="mt16">${L('Когда заходит')}</h3><div class="hours small" id="pc-h"></div>
-    <div class="hours-labels">${Array.from({ length: 24 }, (_, i) => '<span>' + i + '</span>').join('')}</div>
-    <h3 class="mt16">${L('Последние заходы')}</h3><div class="tbl-wrap"><table><thead><tr><th>${L('Зашёл')}</th><th class="num">${L('Пробыл')}</th>
-      <th>${L('Ник')}</th><th>${L('Карты')}</th><th class="num nowrap">${L('У / С')}</th></tr></thead><tbody>${c.recent.map((r) => `<tr><td class="nowrap">${fmtDateTime(r.joined_at)}</td>
-      <td class="num nowrap">${r.online ? pill(L('сейчас'), 'ok') : fmtDur(r.duration)}</td><td>${esc(r.name)}</td>
-      <td class="mono">${r.maps.map(mapLink).join(', ')}</td><td class="num nowrap">${r.kills} / ${r.deaths}</td></tr>`).join('')}</tbody></table></div>
-    ${c.same_names_from.length ? '<div class="note mt12">' + L('Этим же ником заходили и с других адресов: {0} — возможно, это другой человек.',
-      '<span class="mono">' + c.same_names_from.map(esc).join(', ') + '</span>') + '</div>' : ''}`, 'wide');
+    <div class="pc-pane hidden" data-pane="cal">
+      <div class="pc-cal"></div>
+      <h3 class="mt16">${L('Когда заходит')}</h3><div class="hours small" id="pc-h"></div>
+      <div class="hours-labels">${Array.from({ length: 24 }, (_, i) => '<span>' + i + '</span>').join('')}</div>
+    </div>
+    <div class="pc-pane hidden" data-pane="visits">
+      <div id="pc-v"></div>
+      ${c.same_names_from.length ? '<div class="note mt12">' + L('Этим же ником заходили и с других адресов: {0} — возможно, это другой человек.',
+        '<span class="mono">' + c.same_names_from.map(esc).join(', ') + '</span>') + '</div>' : ''}
+    </div>`, 'wide');
   hoursChart(m.querySelector('#pc-h'), hours);
   bars(m.querySelector('#pc-w'), c.weapons, 'title', 'kills', { fmt: (w) => killsShort(w.kills) });
   bars(m.querySelector('#pc-m'), c.maps, 'map', 'visits', { mapPreview: true, fmt: (x) => times(x.visits) });
@@ -921,6 +977,60 @@ ACTIONS.player = async (d) => {
     tip: (x) => L('У/С {0}: {1} за {2}', dec(x.kd), kdTip(x.kills, x.deaths), Pn(x.matches, 'матч', 'матча', 'матчей')) });
   bars(m.querySelector('#pc-d'), WEEKDAYS.map((w, i) => ({ title: w, seconds: week[i] })), 'title', 'seconds',
     { fmt: (x) => (x.seconds ? fmtDur(x.seconds) : '—') });
+  const last = new Date((c.online ? Date.now() / 1000 : c.last) * 1000);
+  const cal = m.querySelector('.pc-cal');
+  cal._pc = { visits: c.recent, y: last.getFullYear(), m: last.getMonth(), day: null };
+  playerCal(cal);
+  pagerMount(m.querySelector('#pc-v'), c.recent, 10, (el, rows) => { el.innerHTML = visitsTable(rows); });
+};
+
+ACTIONS['pc-tab'] = (d, b) => {
+  const m = b.closest('.modal');
+  m.querySelectorAll('#pc-tabs button').forEach((x) => x.classList.toggle('active', x.dataset.tab === d.tab));
+  m.querySelectorAll('.pc-pane').forEach((x) => x.classList.toggle('hidden', x.dataset.pane !== d.tab));
+};
+
+const visitsTable = (rows) => `<div class="tbl-wrap"><table><thead><tr><th>${L('Зашёл')}</th><th class="num">${L('Пробыл')}</th>
+  <th>${L('Ник')}</th><th>${L('Карты')}</th><th class="num nowrap">${L('У / С')}</th></tr></thead><tbody>${rows.map((r) => `<tr>
+  <td class="nowrap">${fmtDateTime(r.joined_at)}</td><td class="num nowrap">${r.online ? pill(L('сейчас'), 'ok') : fmtDur(r.duration)}</td>
+  <td>${esc(r.name)}</td><td class="mono">${r.maps.map(mapLink).join(', ')}</td><td class="num nowrap">${r.kills} / ${r.deaths}</td></tr>`).join('')
+  }</tbody></table></div>`;
+
+/* Календарь игрока: дни, когда он заходил (чем темнее, тем дольше был на сервере); по клику — заходы дня. */
+function playerCal(el) {
+  const st = el._pc, { y, m } = st;
+  const byDay = {};
+  for (const v of st.visits) (byDay[dayKey(new Date(v.joined_at * 1000))] ||= []).push(v);
+  const secs = (list) => list.reduce((a, v) => a + Math.max(0, v.duration || 0), 0);
+  const month = Object.keys(byDay).filter((k) => k.startsWith(y + '-' + pad2(m + 1)));
+  const max = Math.max(1, ...month.map((k) => secs(byDay[k])));
+  const lead = (new Date(y, m, 1).getDay() + 6) % 7, total = new Date(y, m + 1, 0).getDate(), today = dayKey(new Date());
+  let cells = WEEKDAYS.map((w) => `<div class="cal-h">${esc(w)}</div>`).join('');
+  for (let i = 0; i < lead; i++) cells += '<div class="cal-d empty-cell"></div>';
+  for (let n = 1; n <= total; n++) {
+    const key = y + '-' + pad2(m + 1) + '-' + pad2(n), list = byDay[key] || [];
+    const lvl = list.length ? 1 + Math.min(3, Math.floor(3 * secs(list) / max)) : 0;
+    cells += `<button class="cal-d l${lvl}${key === today ? ' today' : ''}${key === st.day ? ' sel' : ''}" data-act="pc-cal-day" data-day="${key}" ${list.length ? '' : 'disabled'}>
+      <span class="cal-n">${n}</span>${list.length ? `<span class="cal-b">${list.length}</span><span class="cal-c">${Pn(list.length, 'заход', 'захода', 'заходов')}</span><span class="cal-p">${fmtDur(secs(list))}</span>` : ''}</button>`;
+  }
+  const sel = st.day && byDay[st.day];
+  el.innerHTML = `<h3><button class="btn small ghost" data-act="pc-cal-move" data-dir="-1">←</button>${esc(monthTitle(y, m))}
+      <button class="btn small ghost" data-act="pc-cal-move" data-dir="1">→</button>
+      <span class="muted fs12">${L('дней с заходами: {0}', num(month.length))}</span></h3>
+    <div class="cal">${cells}</div>
+    <p class="muted fs12">${L('Чем темнее день, тем дольше игрок был на сервере. Нажмите на день — внизу появятся его заходы.')}</p>
+    ${sel ? `<h3 class="mt12">${esc(fmtDate(new Date(st.day + 'T12:00:00').getTime() / 1000))}</h3>${visitsTable(sel)}` : ''}`;
+}
+
+ACTIONS['pc-cal-move'] = (d, b) => {
+  const el = b.closest('.pc-cal'), s = el._pc, t = new Date(s.y, s.m + Number(d.dir), 1);
+  s.y = t.getFullYear(); s.m = t.getMonth(); s.day = null;
+  playerCal(el);
+};
+ACTIONS['pc-cal-day'] = (d, b) => {
+  const el = b.closest('.pc-cal');
+  el._pc.day = el._pc.day === d.day ? null : d.day;
+  playerCal(el);
 };
 
 const who = (p) => (p.bot ? '<span class="tag-bot">🤖</span> ' : p.bot === false ? '🧑 ' : '❔ ');
@@ -1393,30 +1503,37 @@ function renderStatsTab() {
   if (tab === 'humans') {
     const P = S.sessions;
     body.innerHTML = `<div class="grid split">
-        <div class="card"><h2>${L('Заходы живых игроков')}</h2>${sessionsTable(P.sessions, 200)}</div>
-        <div class="card"><h2>${L('Итоги по живым игрокам')}</h2>${humansTable(P.players)}
+        <div class="card"><h2>${L('Заходы живых игроков')}</h2><div id="pg-sess"></div><p class="muted">${esc(trackingNote())}</p></div>
+        <div class="card"><h2>${L('Итоги по живым игрокам')}</h2><div id="pg-hum"></div>
           <p class="muted">${L('Игрок — это IP-адрес: ники бывают одинаковые. Нажмите на ник — откроется его статистика.')}</p></div>
       </div>`;
+    pagerMount($('#pg-sess'), P.sessions, 15, (el, rows) => { el.innerHTML = sessionsTable(rows); });
+    pagerMount($('#pg-hum'), P.players || [], 15, (el, rows) => { el.innerHTML = humansTable(rows); });
   } else if (tab === 'summary') {
     const P = S.sessions, X = P.summary;
-    body.innerHTML = `<div class="grid three">
-        <div class="card"><h2>${L('Оружие живых игроков')}</h2><div class="bars" id="w-h"></div></div>
-        <div class="card"><h2>${L('Откуда игроки')}</h2><div class="bars" id="c-h"></div>
+    body.innerHTML = `<div class="grid two">
+        <div class="card"><h2>${L('Откуда игроки')}</h2><div id="pg-c"></div>
           <p class="muted">${F('geo') ? L('Страна — по IP-адресу, из базы GeoLite2 прямо на сервере (адреса никуда не отправляются).')
             : L('Базы стран GeoLite2 на сервере нет — см. GEOIP_DB в README.')}</p></div>
-        <div class="card"><h2>${L('Рекорды')}</h2>${recordsList(P.records)}</div>
+        <div class="card"><h2>${L('Лучшие игроки')}</h2><div id="pg-best"></div>
+          <p class="muted">${L('По нику, из игрового лога — так же, как таблица ботов.')}</p></div>
       </div>
-      <div class="grid pair">
+      <div class="grid three">
+        <div class="card"><h2>${L('Оружие живых игроков')}</h2><div class="bars" id="w-h"></div></div>
+        <div class="card"><h2>${L('Рекорды')}</h2>${recordsList(P.records)}</div>
         <div class="card"><h2>${L('Лучшие по убийствам')}</h2>${killersList(X.top_killers)}</div>
-        <div class="card"><h2>${L('Карты живых игроков')}</h2><div class="bars" id="m-h"></div>
+      </div>
+      <div class="grid three">
+        <div class="card"><h2>${L('Карты живых игроков')}</h2><div id="pg-mh"></div>
           <p class="muted">${L('Сколько заходов застали карту — где люди бывают чаще всего.')}</p></div>
         <div class="card"><h2>${L('Сколько длятся заходы')}</h2><div class="bars" id="d-h"></div>
           <p class="muted">${L('Много коротких — люди заходят и сразу уходят: стоит посмотреть, почему.')}</p></div>
         <div class="card"><h2>${L('Новые игроки')}</h2>${newcomersList(X.newcomers)}</div>
       </div>`;
     bars($('#w-h'), d.weapons_humans, 'title', 'kills', { muted: (w) => w.environment });
-    bars($('#c-h'), P.countries.map((c) => ({ ...c, title: countryName(c) })), 'title', 'players', { flags: true });
-    bars($('#m-h'), X.maps, 'map', 'visits', { mapPreview: true, fmt: (x) => times(x.visits) });
+    barsPaged($('#pg-c'), P.countries.map((c) => ({ ...c, title: countryName(c) })), 'title', 'players', 10, { flags: true });
+    pagerMount($('#pg-best'), d.humans || [], 10, (el, rows, start) => { el.innerHTML = bestTable(rows, start); });
+    barsPaged($('#pg-mh'), X.maps, 'map', 'visits', 10, { mapPreview: true, fmt: (x) => times(x.visits) });
     bars($('#d-h'), X.durations, 'title', 'visits', { fmt: (x) => Pn(x.visits, 'заход', 'захода', 'заходов') });
   } else if (tab === 'rounds') {
     renderRounds(body, d);
@@ -1424,24 +1541,23 @@ function renderStatsTab() {
     renderCalendar(body);
   } else if (tab === 'bots') {
     body.innerHTML = `<div class="grid two">
-      <div class="card"><h2>${L('Боты')}</h2>${playerTable(d.bots)}</div>
+      <div class="card"><h2>${L('Боты')}</h2><div id="pg-bots"></div></div>
       <div class="card"><h2>${L('Оружие ботов')}</h2><div class="bars" id="w-b"></div>
         <p class="muted">${L('Серым — смерти не от оружия: падения, ловушки, двери.')}</p></div></div>`;
     bars($('#w-b'), d.weapons_bots, 'title', 'kills', { muted: (w) => w.environment });
+    pagerMount($('#pg-bots'), d.bots, 15, (el, rows) => { el.innerHTML = playerTable(rows); });
   } else if (tab === 'maps') {
-    body.innerHTML = `<div class="grid two"><div class="card"><h2>${L('Сколько раз играли')}</h2><div class="bars" id="m-b"></div></div>
-      <div class="card"><h2>${L('Подробно')}</h2><div class="tbl-wrap"><table><thead><tr><th>${L('Карта')}</th><th class="num">${L('Матчей')}</th>
-        <th class="num">${L('С людьми')}</th><th class="num">${L('Убийств')}</th><th class="num nowrap">CT : T</th><th class="num">${L('Средний матч')}</th></tr></thead><tbody>${
-        d.maps.map((m) => `<tr><td class="mono">${mapLink(m.map)}</td><td class="num">${m.matches}</td><td class="num">${m.with_humans}</td>
-          <td class="num">${num(m.kills)}</td><td class="num nowrap">${m.rounds ? num(m.ct_wins) + ' : ' + num(m.t_wins) : '—'}</td><td class="num nowrap">${fmtDur(m.avg_duration)}</td></tr>`).join('')
-      }</tbody></table></div></div></div>
-      <div class="card mt16"><h2>${L('Последние матчи')}</h2>${d.recent.length ? `<div class="tbl-wrap"><table class="compact"><thead><tr>
-        <th>${L('Начало')}</th><th>${L('Карта')}</th><th class="num">${L('Длился')}</th><th class="num">${L('Людей')}</th><th class="num">${L('Ботов')}</th><th class="num">${L('Убийств')}</th></tr></thead><tbody>${
-        d.recent.map((m) => `<tr><td>${fmtTime(m.started_at)}</td><td class="mono">${mapLink(m.map)}</td><td class="num">${fmtDur(m.duration)}</td>
-          <td class="num">${m.humans}</td><td class="num">${m.bots}</td><td class="num">${num(m.kills)}</td></tr>`).join('')
-      }</tbody></table></div>` : '<div class="empty">' + L('Пока ни одного законченного матча') + '</div>'}
+    body.innerHTML = `<div class="grid two"><div class="card"><h2>${L('Сколько раз играли')}</h2><div id="pg-mb"></div></div>
+      <div class="card"><h2>${L('Подробно')}</h2><div id="pg-md"></div></div></div>
+      <div class="card mt16"><h2>${L('Последние матчи')}</h2><div id="pg-rec"></div>
       <p class="muted">${L('Карта «?» — матч шёл, пока панель не работала: в логе WON-сервера названия карты нет.')}</p></div>`;
-    bars($('#m-b'), d.maps, 'map', 'matches', { mapPreview: true });
+    barsPaged($('#pg-mb'), d.maps, 'map', 'matches', 15, { mapPreview: true });
+    pagerMount($('#pg-md'), d.maps, 15, (el, rows) => { el.innerHTML = `<div class="tbl-wrap"><table><thead><tr><th>${L('Карта')}</th><th class="num">${L('Матчей')}</th>
+        <th class="num">${L('С людьми')}</th><th class="num">${L('Убийств')}</th><th class="num nowrap">CT : T</th><th class="num">${L('Средний матч')}</th></tr></thead><tbody>${rows.map((m) => `<tr><td class="mono">${mapLink(m.map)}</td><td class="num">${m.matches}</td><td class="num">${m.with_humans}</td>
+          <td class="num">${num(m.kills)}</td><td class="num nowrap">${m.rounds ? num(m.ct_wins) + ' : ' + num(m.t_wins) : '—'}</td><td class="num nowrap">${fmtDur(m.avg_duration)}</td></tr>`).join('')}</tbody></table></div>`; });
+    pagerMount($('#pg-rec'), d.recent, 10, (el, rows) => { el.innerHTML = rows.length ? `<div class="tbl-wrap"><table class="compact"><thead><tr>
+        <th>${L('Начало')}</th><th>${L('Карта')}</th><th class="num">${L('Длился')}</th><th class="num">${L('Людей')}</th><th class="num">${L('Ботов')}</th><th class="num">${L('Убийств')}</th></tr></thead><tbody>${rows.map((m) => `<tr><td>${fmtTime(m.started_at)}</td><td class="mono">${mapLink(m.map)}</td><td class="num">${fmtDur(m.duration)}</td>
+          <td class="num">${m.humans}</td><td class="num">${m.bots}</td><td class="num">${num(m.kills)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">' + L('Пока ни одного законченного матча') + '</div>'; });
   } else {
     const a = d.activity;
     const labels = '<div class="hours-labels">' + Array.from({ length: 24 }, (_, i) => '<span>' + i + '</span>').join('') + '</div>';
@@ -1491,16 +1607,16 @@ function trackingNote() {
   return t ? L('Заходы панель отмечает по живому логу сервера с {0}, время точное.', fmtDateTime(t)) : '';
 }
 
-function sessionsTable(rows, limit) {
-  if (!rows.length) return '<div class="empty">' + L('Пока никто из живых игроков не заходил.') + ' ' + esc(trackingNote()) + '</div>';
+function sessionsTable(rows) {
+  if (!rows.length) return '<div class="empty">' + L('Пока никто из живых игроков не заходил.') + '</div>';
   return `<div class="tbl-wrap"><table><thead><tr><th>${L('Зашёл')}</th><th class="num">${L('Пробыл')}</th><th>${L('Игрок')}</th>
     <th>${L('IP · страна')}</th><th>${L('Карты')}</th><th class="num nowrap">${L('У / С')}</th></tr></thead><tbody>${
-    rows.slice(0, limit).map((s) => `<tr><td class="nowrap">${fmtDateTime(s.joined_at)}</td>
+    rows.map((s) => `<tr><td class="nowrap">${fmtDateTime(s.joined_at)}</td>
       <td class="num nowrap">${s.online ? pill(L('на сервере'), 'ok') : fmtDur(sessEnd(s) - s.joined_at)}</td>
       <td>${playerBtn(s.ip, s.name)}</td>
       <td class="nowrap">${flagHtml(s.country)} <span class="mono">${esc(s.ip || s.address || '—')}</span></td>
       <td class="mono">${s.maps.map(mapLink).join(', ')}</td><td class="num nowrap">${s.kills} / ${s.deaths}</td></tr>`).join('')
-  }</tbody></table></div><p class="muted">${esc(trackingNote())}</p>`;
+  }</tbody></table></div>`;
 }
 
 function humansTable(rows) {
@@ -1512,6 +1628,27 @@ function humansTable(rows) {
       <td class="mono">${esc(p.ip)}</td><td class="nowrap">${countryTag(p.country)}</td>
       <td class="num">${num(p.visits)}</td><td class="num nowrap">${fmtDur(p.seconds)}</td>
       <td class="num" title="${esc(kdTip(p.kills, p.deaths))}">${dec(p.kd)}</td></tr>`).join('')
+  }</tbody></table></div>`;
+}
+
+/* Ник из игрового лога → карточка игрока: адрес, с которого этим ником заходили больше всего.
+   Ника нет среди заходов (только в старом логе) — просто текст. */
+function bestWho(nick) {
+  let best = null;
+  for (const p of (S.sessions && S.sessions.players) || []) {
+    if ((p.names || []).includes(nick) && (!best || p.visits > best.visits)) best = p;
+  }
+  return best ? playerBtn(best.ip, nick) : esc(nick);
+}
+
+/* Лучшие живые игроки — по нику, из игрового лога (как таблица ботов, только короче). */
+function bestTable(rows, start = 0) {
+  if (!rows.length) return '<div class="empty">' + L('Пока никого') + '</div>';
+  return `<div class="tbl-wrap"><table><thead><tr><th class="num">#</th><th>${L('Игрок')}</th><th class="num">${L('Матчей')}</th>
+    <th class="num">${L('Убийств')}</th><th class="num">${L('Смертей')}</th><th class="num">${L('У/С')}</th><th class="num">${L('В игре')}</th></tr></thead><tbody>${
+    rows.map((p, i) => `<tr><td class="num muted">${start + i + 1}</td><td>${bestWho(p.name)}</td><td class="num">${num(p.matches)}</td>
+      <td class="num">${num(p.kills)}</td><td class="num">${num(p.deaths)}</td><td class="num">${dec(p.kd)}</td>
+      <td class="num nowrap">${fmtDur(p.playtime)}</td></tr>`).join('')
   }</tbody></table></div>`;
 }
 
@@ -1568,8 +1705,9 @@ function renderCalendar(body) {
       <div class="card"><h2>${L('Когда заходят: дни недели × часы')}</h2><div class="heat" id="heat"></div>
         <p class="muted">${L('Сколько минут живые игроки провели на сервере в каждый час — за всё время. Время — по часам этого компьютера.')}</p></div>
     </div>
-    ${sel ? `<div class="card mt16"><h2>${esc(fmtDate(new Date(S.calDay + 'T12:00:00').getTime() / 1000))}</h2>${sessionsTable(sel, 500)}</div>` : ''}`;
+    ${sel ? `<div class="card mt16"><h2>${esc(fmtDate(new Date(S.calDay + 'T12:00:00').getTime() / 1000))}</h2><div id="pg-day"></div></div>` : ''}`;
   renderHeat($('#heat'), rows);
+  if (sel) pagerMount($('#pg-day'), sel, 15, (el, part) => { el.innerHTML = sessionsTable(part); });
 }
 
 function renderHeat(el, rows) {
@@ -1678,11 +1816,12 @@ ACTIONS['console-run'] = async () => {
 PAGES.audit = async (main) => {
   let rows;
   try { rows = await api('/api/audit'); } catch (e) { main.innerHTML = '<div class="error">' + esc(e.message) + '</div>'; return; }
-  main.innerHTML = `<h1>${L('Журнал действий')}</h1><div class="card">${rows.length ? `<div class="tbl-wrap"><table>
+  main.innerHTML = `<h1>${L('Журнал действий')}</h1><div class="card"><div id="pg-audit"></div></div>`;
+  pagerMount($('#pg-audit'), rows, 25, (el, part) => { el.innerHTML = part.length ? `<div class="tbl-wrap"><table>
     <thead><tr><th>${L('Когда')}</th><th>${L('Действие')}</th><th>${L('Подробности')}</th><th>${L('Итог')}</th></tr></thead><tbody>${
-    rows.map((r) => `<tr><td>${fmtTime(r.at)}</td><td>${esc(r.action)}</td><td class="mono">${esc(r.detail)}</td>
+    part.map((r) => `<tr><td>${fmtTime(r.at)}</td><td>${esc(r.action)}</td><td class="mono">${esc(r.detail)}</td>
       <td>${r.ok ? pill(L('ок'), 'ok') : pill(L('ошибка'), 'bad')}${r.output ? '<div class="muted mono">' + esc(r.output.slice(0, 200)) + '</div>' : ''}</td></tr>`).join('')
-  }</tbody></table></div>` : '<div class="empty">' + L('Пока пусто') + '</div>'}</div>`;
+  }</tbody></table></div>` : '<div class="empty">' + L('Пока пусто') + '</div>'; });
 };
 
 /* ---------- Настройки панели ---------- */
@@ -1690,6 +1829,118 @@ PAGES.audit = async (main) => {
 PAGES.panel = async (main) => {
   main.innerHTML = '<h1>' + L('Настройки панели') + '</h1>';
   settingsInto(main, false);
+};
+
+/* ---------- Бэкап: копии статистики ---------- */
+
+PAGES.backups = async (main) => {
+  main.innerHTML = '<h1>' + L('Бэкап') + '</h1><div class="card" id="bk-card"></div>';
+  try { $('#bk-card').innerHTML = backupsHtml(await api('/api/backups')); } catch (e) { $('#bk-card').innerHTML = '<div class="error">' + esc(e.message) + '</div>'; }
+};
+
+function backupsHtml(d) {
+  const kinds = { auto: L('каждый день'), manual: L('вручную'), 'before-restore': L('перед восстановлением'), upload: L('с компьютера') };
+  const n = (x) => (x == null ? '—' : num(x));
+  return `<h2>${L('Копии статистики')}</h2>
+    <p class="muted">${L('Раз в сутки панель сама сохраняет копию всей статистики: матчи, игроков, заходы, журнал действий. Хранятся копии за последние {0}, самая свежая — всегда.', Pn(d.days, 'день', 'дня', 'дней'))}</p>
+    <div class="bk-actions"><button class="btn primary" data-act="bk-make">${L('Сделать копию сейчас')}</button>
+      <button class="btn" data-act="bk-upload">${L('Загрузить с компьютера')}</button></div>
+    ${d.items.length ? `<div class="tbl-wrap mt12"><table><thead><tr><th>${L('Когда')}</th><th>${L('Какая')}</th>
+      <th class="num">${L('Матчей')}</th><th class="num">${L('Игроков')}</th><th>${L('Последний матч')}</th><th class="num">${L('Размер')}</th><th></th></tr></thead><tbody>${
+      d.items.map((x) => `<tr><td class="nowrap">${fmtDateTime(x.at)}</td><td>${esc(kinds[x.kind] || x.kind)}</td>
+        <td class="num">${n(x.matches)}</td><td class="num">${n(x.players)}</td><td class="nowrap">${x.last_match ? fmtDateTime(x.last_match) : '—'}</td>
+        <td class="num nowrap">${fmtBytes(x.size)}</td>
+        <td class="nowrap"><button class="btn" data-act="bk-save" data-name="${esc(x.name)}">${L('Скачать')}</button>
+          <button class="btn" data-act="bk-restore" data-name="${esc(x.name)}" data-at="${x.at}">${L('Восстановить')}</button></td></tr>`).join('')
+    }</tbody></table></div>` : '<div class="empty mt12">' + L('Копий пока нет — первая появится через пару минут после запуска панели.') + '</div>'}
+    <div class="muted fs12 mt8">${L('«Восстановить» возвращает статистику к выбранной копии. Перед этим панель сохраняет текущую — её тоже можно вернуть. Всё, что сыграно после копии, панель дочитает из живого лога сервера, если он с тех пор не обрезался.')}</div>
+    <div class="muted fs12 mt8">${L('«Скачать» и «Сделать копию сейчас» спрашивают, куда сохранить файл на компьютере. «Загрузить с компьютера» — выбрать такой файл; после проверки панель спросит, восстановить ли статистику из него.')}</div>`;
+}
+
+const bkShow = (d) => { if (d && $('#bk-card')) $('#bk-card').innerHTML = backupsHtml(d); };
+const bkFileName = (name) => (SITE.title || GAME).replace(/[^\w.-]+/g, '_') + '-' + name;
+
+/* Сохранить копию на компьютер. Где браузер умеет (Chrome, Edge) — окно «куда сохранить»; иначе — обычное
+   скачивание в папку загрузок. handle — уже выбранное место (окно надо открыть сразу по нажатию). */
+async function bkPick(suggested) {
+  if (!window.showSaveFilePicker) return null;
+  try {
+    return await window.showSaveFilePicker({ suggestedName: suggested,
+      types: [{ description: L('Копия статистики'), accept: { 'application/gzip': ['.gz'] } }] });
+  } catch (e) { return false; }   // окно закрыли — не сохранять
+}
+
+async function bkSave(name, handle) {
+  const url = '/api/backups/file?name=' + encodeURIComponent(name);
+  if (handle) {
+    const r = await fetch(url, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error(L('Ошибка {0}', r.status));
+    const w = await handle.createWritable();
+    await w.write(await r.blob());
+    await w.close();
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = bkFileName(name);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+ACTIONS['bk-make'] = async () => {
+  const t = new Date();
+  const stamp = t.getFullYear() + pad2(t.getMonth() + 1) + pad2(t.getDate()) + '-' + pad2(t.getHours()) + pad2(t.getMinutes()) + pad2(t.getSeconds());
+  const handle = await bkPick(bkFileName('panel-' + stamp + '-manual.db.gz'));
+  const d = await act(() => api('/api/backups', { action: 'create' }));
+  if (!d) return;
+  bkShow(d);
+  if (handle === false) { toast(L('Копия сохранена на сервере')); return; }
+  await act(() => bkSave(d.items[0].name, handle), L('Копия сохранена на сервере и на компьютере'));
+};
+
+ACTIONS['bk-save'] = async (b) => {
+  const handle = await bkPick(bkFileName(b.name));
+  if (handle === false) return;
+  await act(() => bkSave(b.name, handle), handle ? L('Копия сохранена на компьютере') : '');
+};
+
+async function bkRestore(name, at, asked) {
+  if (!asked && !confirm(L('Вернуть статистику к копии от {0}? Текущая статистика сначала сохранится отдельной копией.', fmtDateTime(at)))) return;
+  toast(L('Выполняю…'));
+  bkShow(await act(() => api('/api/backups', { action: 'restore', name }), L('Статистика восстановлена')));
+}
+
+ACTIONS['bk-restore'] = (b) => bkRestore(b.name, Number(b.at));
+
+// выбор файла: окно выбора не сообщает об отмене, поэтому кнопку не держим — дальше всё в onchange
+ACTIONS['bk-upload'] = () => {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.gz,.db';
+  inp.onchange = async () => {
+    const file = inp.files[0];
+    if (!file) return;
+    toast(L('Загружаю {0}…', file.name));
+    const d = await act(async () => {
+      const r = await fetch('/api/backups/upload', { method: 'POST', credentials: 'same-origin', body: file,
+        headers: { 'X-CSRF': S.csrf, 'Content-Type': 'application/octet-stream' } });
+      let j;
+      try { j = await r.json(); } catch (e) { throw new Error(L('Панель ответила не JSON ({0})', r.status)); }
+      if (!j.ok) throw new Error(j.error ? Lsrv(j.error) : L('Ошибка {0}', r.status));
+      return translateReply(j.data);
+    });
+    if (!d) return;
+    bkShow(d);
+    const x = d.item;
+    const what = L('В копии: {0}, {1}, последний матч — {2}.', Pn(x.matches || 0, 'матч', 'матча', 'матчей'),
+      Pn(x.players || 0, 'игрок', 'игрока', 'игроков'), x.last_match ? fmtDateTime(x.last_match) : '—');
+    if (confirm(L('Копия загружена. {0} Восстановить статистику из неё сейчас? Текущая статистика сначала сохранится отдельной копией.', what))) {
+      await bkRestore(x.name, x.at, true);
+    }
+    else toast(L('Копия лежит в списке — восстановить её можно позже.'));
+  };
+  inp.click();
 };
 
 /* ---------- перезапуск сервера ---------- */

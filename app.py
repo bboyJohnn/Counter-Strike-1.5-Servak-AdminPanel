@@ -29,11 +29,13 @@ import os
 import re
 import secrets
 import sys
+import tempfile
 import time
 
 from aiohttp import web
 
 import audit as audit_mod
+import backups as backups_mod
 import cfg as cfg_mod
 import config as config_mod
 import geo as geo_mod
@@ -162,6 +164,9 @@ class Panel:
         self.audit = audit_mod.Audit(db)
         self.live = live_mod.Live(db, cfg.live_log)
         self.stats = stats_mod.Stats(db, cfg.live_log)
+        self.backups = backups_mod.Backups(db, cfg.backup_dir, cfg.backup_days)
+        # фоновые записи в базу и восстановление копии статистики идут по очереди
+        self.db_lock = asyncio.Lock()
         self.sys = sys_mod.System(cfg)
         self.sessions = Sessions(cfg.secret)
         self.password_hash = cfg.password_hash
@@ -220,6 +225,12 @@ class Panel:
 
     async def blocking(self, fn, *args):
         return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
+
+    async def db_write(self, fn):
+        """Запись в базу из фона — не во время восстановления копии. fn без аргументов
+        (lambda: self.live.tick()): self.live после восстановления — новый."""
+        async with self.db_lock:
+            return await self.blocking(fn)
 
     async def rcon(self, action, command, detail=""):
         """rcon с записью в журнал. Ошибку превращает в понятный ответ."""
@@ -721,11 +732,76 @@ class Panel:
         need(success, "перезапуск: %s" % out[:300])
         return ok({"output": out})
 
+    # --- копии статистики ---------------------------------------------
+
+    async def backups_view(self, request):
+        need(self.backups.days > 0, "копии статистики выключены (BACKUP_DAYS в .env)")
+        return ok({"days": self.backups.days, "items": await self.blocking(self.backups.items)})
+
+    async def backups_action(self, request):
+        need(self.backups.days > 0, "копии статистики выключены (BACKUP_DAYS в .env)")
+        body = await request.json()
+        action = body.get("action")
+        if action == "create":
+            item = await self.blocking(self.backups.create, "manual")
+            self.audit.log("копия статистики", item["name"])
+        elif action == "restore":
+            async with self.db_lock:
+                try:
+                    chosen, before = await self.blocking(self.backups.restore, str(body.get("name", "")))
+                except (LookupError, ValueError) as e:
+                    raise ApiError(str(e))
+                # кто на сервере и заходы — заново по живому логу, с позиции из копии;
+                # статистика дочитает лог с её позиции сразу
+                self.live = live_mod.Live(self.live.db_path, self.conf.live_log)
+                await self.blocking(self.live.bootstrap)
+                await self.blocking(self.stats.update)
+            self.order_synced = None
+            self.audit.log("восстановление статистики", "из %s, прежняя сохранена в %s" % (chosen["name"], before["name"]))
+        else:
+            raise ApiError("неизвестное действие")
+        return ok({"days": self.backups.days, "items": await self.blocking(self.backups.items)})
+
+    async def backup_file(self, request):
+        """Скачать копию: файл .db.gz, имя — с названием контейнера, чтобы на компьютере не путать серверы."""
+        need(self.backups.days > 0, "копии статистики выключены (BACKUP_DAYS в .env)")
+        name = request.query.get("name", "")
+        try:
+            path = self.backups.path_of(name)
+        except LookupError as e:
+            raise ApiError(str(e), 404)
+        prefix = re.sub(r"[^\w.-]+", "_", self.conf.container) + "-" if self.conf.container else ""
+        return web.FileResponse(path, headers={"Content-Type": "application/gzip",
+                                               "Content-Disposition": 'attachment; filename="%s%s"' % (prefix, name)})
+
+    async def backup_upload(self, request):
+        """Копия с компьютера: тело запроса — сам файл. Проверяется и ложится в список («с компьютера»)."""
+        need(self.backups.days > 0, "копии статистики выключены (BACKUP_DAYS в .env)")
+        os.makedirs(self.backups.folder, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(suffix=".upload", dir=self.backups.folder)
+        try:
+            size = 0
+            with os.fdopen(fd, "wb") as f:
+                # читаем потоком: client_max_size (256 КБ) — для обычных запросов, копия больше
+                async for chunk in request.content.iter_chunked(65536):
+                    size += len(chunk)
+                    need(size <= backups_mod.MAX_UPLOAD, "файл больше %d МБ" % (backups_mod.MAX_UPLOAD // 2 ** 20))
+                    f.write(chunk)
+            need(size > 0, "пустой файл")
+            try:
+                item = await self.blocking(self.backups.add, tmp)
+            except ValueError as e:
+                raise ApiError(str(e))
+        finally:
+            os.remove(tmp)
+        self.audit.log("копия статистики", "загружена с компьютера: %s" % item["name"])
+        return ok({"item": item, "days": self.backups.days, "items": await self.blocking(self.backups.items)})
+
     async def audit_view(self, request):
         return ok(await self.blocking(self.audit.recent, 300))
 
     async def stats_refresh(self, request):
-        return ok({"added": await self.blocking(self.stats.update)})
+        return ok({"added": await self.db_write(self.stats.update)})
 
     # --- фоновое ------------------------------------------------------
 
@@ -737,21 +813,21 @@ class Panel:
                 if time.time() - ts < 120:
                     info = await self.hl.info()
                     if info:
-                        await self.blocking(self.live.set_map, ts, info["map"])
+                        await self.db_write(lambda: self.live.set_map(ts, info["map"]))
 
         async def live_loop():
             try:
-                await self.blocking(self.live.bootstrap)
+                await self.db_write(lambda: self.live.bootstrap())
                 last = self.live.pending_maps[-1:] if self.live.pending_maps else []
                 self.live.pending_maps = []
                 info = await self.hl.info()
                 if info and info["map"] != self.live.current_map:
-                    await self.blocking(self.live.set_map, last[0] if last else time.time(), info["map"])
+                    await self.db_write(lambda: self.live.set_map(last[0] if last else time.time(), info["map"]))
             except Exception as e:
                 print("live bootstrap: %r" % e, file=sys.stderr, flush=True)
             while True:
                 try:
-                    await self.blocking(self.live.tick)
+                    await self.db_write(lambda: self.live.tick())
                     await note_maps()
                 except Exception as e:
                     print("live: %r" % e, file=sys.stderr, flush=True)
@@ -762,11 +838,11 @@ class Panel:
             while True:
                 try:
                     players = await self.hl.players()
-                    await self.blocking(self.live.reconcile, players)
+                    await self.db_write(lambda: self.live.reconcile(players))
                     info = await self.hl.info()
                     # смена карты, которую лог не принёс (первая карта после запуска сервера)
                     if info and info["map"] != self.live.current_map:
-                        await self.blocking(self.live.set_map, time.time(), info["map"])
+                        await self.db_write(lambda: self.live.set_map(time.time(), info["map"]))
                     if info:
                         await self.keep_order(info["map"])
                 except Exception as e:
@@ -777,12 +853,23 @@ class Panel:
             await asyncio.sleep(15)
             while True:
                 try:
-                    await self.blocking(self.stats.update)
+                    await self.db_write(self.stats.update)
                 except Exception as e:  # статистика не должна ронять панель
                     print("stats: %r" % e, file=sys.stderr, flush=True)
                 await asyncio.sleep(60)
 
-        tasks = [asyncio.create_task(t()) for t in (live_loop, reconcile_loop, stats_loop)]
+        async def backup_loop():
+            # копия статистики раз в сутки (BACKUP_DAYS), старые убираются
+            await asyncio.sleep(120)
+            while self.backups.days > 0:
+                try:
+                    if await self.blocking(self.backups.due):
+                        await self.blocking(self.backups.create, "auto")
+                except Exception as e:
+                    print("backup: %r" % e, file=sys.stderr, flush=True)
+                await asyncio.sleep(3600)
+
+        tasks = [asyncio.create_task(t()) for t in (live_loop, reconcile_loop, stats_loop, backup_loop)]
         transport = None
         addr = self.conf.log_udp_addr()
         if addr:
@@ -903,6 +990,10 @@ def build_app(panel):
     r.add_get("/api/commands", panel.commands)
     r.add_post("/api/container", panel.container)
     r.add_get("/api/audit", panel.audit_view)
+    r.add_get("/api/backups", panel.backups_view)
+    r.add_post("/api/backups", panel.backups_action)
+    r.add_get("/api/backups/file", panel.backup_file)
+    r.add_post("/api/backups/upload", panel.backup_upload)
 
     async def index(request):
         """Страница со ссылками на скрипты и стили с номером версии (время изменения

@@ -651,3 +651,19 @@ code.nowrap { white-space: nowrap; }
   h1 { font-size: 22px; margin-bottom: 14px; }
   .ov-maps { gap: 8px; }
 }
+
+/* Длинные списки по страницам: кнопки 1 2 3 … под таблицей */
+.pager { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.pager .pg { min-width: 34px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 6px; background: transparent;
+  color: var(--ink); font: inherit; cursor: pointer; }
+.pager .pg:hover:not(:disabled) { border-color: var(--accent); }
+.pager .pg.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.pager .pg:disabled { opacity: .4; cursor: default; }
+.pager .pg-gap { padding: 0 2px; color: var(--muted); }
+.pager .pg-count { margin-left: auto; }
+[data-style="hl"] .pager .pg { color: #f0b418; border-color: rgba(255, 170, 0, .35); background: rgba(0, 0, 0, .55); border-radius: 0; }
+[data-style="hl"] .pager .pg.active { background: var(--hl-title); color: #000; border-color: var(--accent); }
+[data-style="steam"] .pager .pg { background: #4c5844; border: 1px solid; border-color: var(--hi) var(--lo) var(--lo) var(--hi); border-radius: 0; }
+[data-style="steam"] .pager .pg.active { color: var(--accent); border-color: var(--lo) var(--hi) var(--hi) var(--lo); }
+.pc-cal h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bk-actions { display: flex; gap: 8px; flex-wrap: wrap; }

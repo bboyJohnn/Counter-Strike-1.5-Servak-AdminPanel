@@ -93,6 +93,9 @@ class Config:
         self.bots_cfg = self.p(e("BOTS_CFG"), "")
         self.geoip = [self.p(x.strip(), "") for x in
                       e("GEOIP_DB", os.path.join(self.data, "GeoLite2-Country.mmdb")).split(",") if x.strip()]
+        # копии статистики (panel.db): сколько дней хранить, 0 — не делать
+        self.backup_days = int(e("BACKUP_DAYS", "0"))
+        self.backup_dir = self.p(e("BACKUP_DIR"), os.path.join(self.data, "backups"))
 
     def get(self, key, default=""):
         v = (self.env.get(key) or "").strip()
@@ -121,6 +124,7 @@ class Config:
         return {
             "container": bool(self.container),
             "restart": bool(self.container or self.restart_cmd),
+            "backups": self.backup_days > 0,
             "bots": bool(self.bots_cfg and os.path.exists(self.bots_cfg)),
             # какие боты: yapb.cfg — YaPB (Counter-Strike), иначе jk_botti (Half-Life)
             "bots_kind": "yapb" if os.path.basename(self.bots_cfg or "").lower().startswith("yapb") else "jk_botti",
