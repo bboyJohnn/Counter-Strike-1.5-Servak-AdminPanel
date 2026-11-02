@@ -666,6 +666,13 @@ function hubHref() {
 function renderShell() {
   const title = SITE.title || GAME;
   document.title = title;
+  // эмблема игры у заголовка каждой страницы и на вкладке браузера: круглый значок с заставки меню
+  // (static/hl/emblem.png, его вырезает tools/build_assets.py), а без него — свой прицел (emblem.svg)
+  if (F('emblem')) {
+    document.documentElement.style.setProperty('--emblem', 'url("/static/hl/emblem.png")');
+    const icon = document.querySelector('link[rel="icon"]');
+    if (icon) { icon.type = 'image/png'; icon.href = '/static/hl/emblem.png'; }
+  }
   $('#login').innerHTML = `<video id="login-video" class="login-video hidden" muted loop playsinline aria-hidden="true"></video>
     <form id="login-form" class="login-card">
       <div class="brand">${LAMBDA}<span>${esc(title)}</span></div>
@@ -1420,13 +1427,18 @@ ACTIONS['map-load'] = async () => {
 PAGES.settings = async (main) => {
   let d;
   try { d = await api('/api/settings'); } catch (e) { main.innerHTML = '<div class="error">' + esc(e.message) + '</div>'; return; }
+  // разделы server.cfg и боты — вкладками, в порядке файла; последняя вкладка — копии файла
   const groups = {};
   for (const s of d.settings) (groups[s.section || L('Прочее')] ||= []).push(s);
+  const tabs = Object.keys(groups);
+  if (!tabs.includes(S.setTab) && S.setTab !== 'backups') S.setTab = tabs[0] || 'backups';
   main.innerHTML = `<h1>${L('Настройки сервера')}</h1>
     ${pendingBanner(d.pending)}
     <div class="note">${F('bots') ? (YAPB() ? L('Настройки — из server.cfg, боты — из yapb.cfg.') : L('Настройки — из server.cfg, боты — из jk_botti.cfg.')) : L('Настройки — из server.cfg.')}
       ${L('Перед каждой записью панель сохраняет копию файла. Настройки применяются сразу. Если сервер применит настройку только после смены карты или перезапуска — панель спросит, сделать это сейчас или потом.')}</div>
-    ${Object.entries(groups).map(([g, items]) => `<div class="card"><h2>${esc(g)}</h2><div class="tbl-wrap"><table>
+    <div class="tabs" id="set-tabs">${tabs.map((g) => `<button data-act="set-tab" data-tab="${esc(g)}">${esc(secTitle(g, true))}<span class="tab-n">${groups[g].length}</span></button>`).join('')}
+      <button data-act="set-tab" data-tab="backups">${L('Резервные копии')}</button></div>
+    ${Object.entries(groups).map(([g, items]) => `<div class="card set-pane" data-pane="${esc(g)}"><h2>${esc(secTitle(g))}</h2><div class="tbl-wrap"><table>
       <thead><tr><th>${L('Настройка')}</th><th>${L('В файле')}</th><th>${L('На сервере')}</th><th></th></tr></thead><tbody>${
       items.map((s) => `<tr><td><span class="mono">${esc(s.name)}</span>${s.comment ? '<div class="muted">' + esc(s.comment) + '</div>' : ''}
         ${s.restart_note ? '<div>' + pill(s.restart_note, 'warn') + '</div>' : ''}</td>
@@ -1434,10 +1446,27 @@ PAGES.settings = async (main) => {
         <td class="mono">${s.secret ? '•••' : s.bot ? '<span class="muted">—</span>' : esc(s.live ?? '—')}</td>
         <td><button class="btn small" data-act="setting-save" data-name="${esc(s.name)}" data-bot="${s.bot ? 1 : ''}">${L('Сохранить')}</button></td></tr>`).join('')
     }</tbody></table></div></div>`).join('')}
-    <div class="card"><h2>${L('Резервные копии')}</h2>${d.backups.length
+    <div class="card set-pane" data-pane="backups"><h2>${L('Резервные копии')}</h2>${d.backups.length
       ? '<div class="mono">' + d.backups.map(esc).join('<br>') + '</div><p class="muted">' + L('Лежат на сервере в папке данных панели (PANEL_DATA), в cfg-backups.') + '</p>'
       : '<div class="empty">' + L('Пока ни одной правки') + '</div>'}</div>`;
+  showSetTab();
 };
+
+/* Раздел server.cfg («2. Карта и раунды») — без номера, а на вкладке ещё и без имени файла
+   («Боты (yapb.cfg)» → «Боты»). Русские слова, набранные ЗАГЛАВНЫМИ, — строчными, как в панели Quake. */
+function secTitle(s, short) {
+  let t = s.replace(/^\d+\.\s*/, '').trim();
+  if (/[А-ЯЁ]{2}/.test(t)) t = t.replace(/[А-ЯЁ]+/g, (w) => w.toLowerCase());
+  if (short) t = t.replace(/\s*\([^)]*\)$/, '');
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : s;
+}
+
+function showSetTab() {
+  document.querySelectorAll('#set-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === S.setTab));
+  document.querySelectorAll('.set-pane').forEach((p) => p.classList.toggle('hidden', p.dataset.pane !== S.setTab));
+}
+
+ACTIONS['set-tab'] = (d) => { S.setTab = d.tab; showSetTab(); };
 
 ACTIONS['setting-save'] = async (d) => {
   const input = document.querySelector('input[data-setting="' + CSS.escape(d.name) + '"]');

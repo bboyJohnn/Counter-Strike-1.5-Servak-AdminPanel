@@ -354,6 +354,9 @@ sudo -u hlds venv/bin/python tools/build_assets.py --game /path/to/Half-Life
   automatic view from a spawn point; you can pick your own in `tools/map_cameras.txt`.
 - **Menu sounds** — `cstrike/media/launch_*.wav` (or `valve/media`) of the old WON menu: hover, click, error,
   window open/close.
+- **Emblem** — the round Counter-Strike logo from the corner of the old menu's background
+  (`cstrike/gfx/shell/splash.bmp`), shown next to every page title and as the browser tab icon. Without it the
+  panel uses its own crosshair.
 - Counter-Strike 1.5 has no spinning menu logo (its `logo.avi` is an empty placeholder), so the login screen has
   none. With `--mod valve` the same script builds the Half-Life one.
 
@@ -563,7 +566,7 @@ docs/             the banner and screenshots of this README
 The panel's code is under the [MIT license](LICENSE).
 
 Counter-Strike® and Half-Life® are trademarks of Valve Corporation. This panel is not affiliated with or endorsed by Valve.
-Map pictures and menu sounds are Valve's and are **not** included — the panel builds
+Map pictures, menu sounds and the emblem are Valve's and are **not** included — the panel builds
 them from your own copy of the game (`tools/build_assets.py`).
 
 Included third-party files: background music by Ruskerdax, yd, isaiah658 and vitalezzz from OpenGameArt under

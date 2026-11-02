@@ -185,6 +185,7 @@ class Panel:
         f["art"] = bool(self._static_files("maps", (".jpg",)))
         f["sfx"] = bool(self._static_files(os.path.join("hl", "sfx"), (".wav",)))
         f["logo"] = os.path.exists(os.path.join(STATIC, "hl", "logo.webm"))
+        f["emblem"] = os.path.exists(os.path.join(STATIC, "hl", "emblem.png"))
         f["geo"] = any(os.path.exists(x) for x in self.conf.geoip)
         return f
 

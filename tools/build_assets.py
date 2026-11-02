@@ -9,6 +9,9 @@ These files are Valve's, so they are not in the repository; the panel works with
   sfx       static/hl/sfx/launch_*.wav - the menu sounds of the old (WON) menu;
   logo      static/hl/logo.webm - the spinning COUNTER-STRIKE logo of that menu (cstrike/media/logo.avi,
             the dedicated server has it), shown on the login screen (needs ffmpeg);
+  emblem    static/hl/emblem.png - the round Counter-Strike logo from the corner of the old menu's
+            background (cstrike/gfx/shell/splash.bmp): next to every page title and on the browser tab
+            (needs Pillow; without it the panel shows its own crosshair);
   music     static/music/hl-NN.mp3 - the Half-Life soundtrack, if your game is the Steam version
             (valve/media/Half-Life01.mp3 ...); listed in static/music/tracks.local.json.
 
@@ -177,6 +180,41 @@ def build_logo(game, force, mod):
     print("logo: %s" % ("-> %s" % dst if r.returncode == 0 else "ffmpeg failed: " + r.stderr[-300:]))
 
 
+def build_emblem(game, force, mod):
+    src = Path(game, mod, "gfx", "shell", "splash.bmp")
+    dst = STATIC / "hl" / "emblem.png"
+    if not src.exists():
+        print("emblem: no %s (only the old WON menu has it)" % src)
+        return
+    if dst.exists() and not force:
+        return
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError as e:
+        print("emblem: skipped (%s) - install it: pip install pillow" % e)
+        return
+    im = Image.open(src).convert("RGB")
+    w, h = im.size
+    # светлый серый круг эмблемы — в правом нижнем углу заставки; ищем его по светлым серым точкам
+    px = im.load()
+    pts = [(x, y) for y in range(max(0, h - 120), h) for x in range(max(0, w - 100), w)
+           if min(px[x, y]) > 150 and max(px[x, y]) - min(px[x, y]) < 30]
+    if len(pts) < 500:
+        print("emblem: no round logo in the corner of %s" % src)
+        return
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    cx, cy = (min(xs) + max(xs) + 1) / 2, (min(ys) + max(ys) + 1) / 2
+    r = max(max(xs) - min(xs), max(ys) - min(ys)) / 2 + 2.5       # + тёмная кайма вокруг круга
+    part = im.crop((round(cx - r), round(cy - r), round(cx + r), round(cy + r))).convert("RGBA")
+    n = part.size[0]
+    mask = Image.new("L", (n * 8, n * 8), 0)        # круг рисуется крупно и уменьшается — края гладкие
+    ImageDraw.Draw(mask).ellipse((0, 0, n * 8 - 1, n * 8 - 1), fill=255)
+    part.putalpha(mask.resize((n, n), Image.LANCZOS))
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    part.save(dst, optimize=True)
+    print("emblem: %dx%d -> %s" % (n, n, dst))
+
+
 def build_music(game):
     src = Path(game, "valve", "media")
     tracks = sorted(src.glob("Half-Life[0-9][0-9].mp3"))
@@ -200,7 +238,8 @@ def main():
     ap.add_argument("--game", help="folder with valve/ and cstrike/ inside (game client or dedicated server)")
     ap.add_argument("--mod", default="cstrike", help="mod folder inside --game (default: cstrike)")
     ap.add_argument("--maps", action="append", default=[], help="extra folder with .bsp maps (can repeat)")
-    ap.add_argument("--only", default="previews,sfx,logo,music", help="comma list: previews,sfx,logo,music")
+    ap.add_argument("--only", default="previews,sfx,logo,emblem,music",
+                    help="comma list: previews,sfx,logo,emblem,music")
     ap.add_argument("--force", action="store_true", help="rebuild files that already exist")
     args = ap.parse_args()
     parts = {p.strip() for p in args.only.split(",") if p.strip()}
@@ -230,12 +269,14 @@ def main():
             build_previews(maps, game, args.force, server_maps, args.mod)
     if not game:
         if parts - {"previews"}:
-            print("sfx/logo/music need --game")
+            print("sfx/logo/emblem/music need --game")
         return
     if "sfx" in parts:
         build_sfx(game, args.mod)
     if "logo" in parts:
         build_logo(game, args.force, args.mod)
+    if "emblem" in parts:
+        build_emblem(game, args.force, args.mod)
     if "music" in parts:
         build_music(game)
     print("Done. Reload the panel page (F5).")

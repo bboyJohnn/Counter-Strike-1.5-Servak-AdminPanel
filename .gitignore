@@ -11,5 +11,6 @@ venv/
 static/maps/
 static/hl/sfx/
 static/hl/logo.webm
+static/hl/emblem.png
 static/music/hl-*.mp3
 static/music/tracks.local.json
